@@ -136,7 +136,7 @@ render=function(){if(s.track==='sales'&&s.screen==='course'){s.day=0;el.innerHTM
 function courseSales(){return shell(`<button class="back" onclick="setScreen('home')">← Все направления</button><div class="hero"><div><div class="eyebrow">ПЛАН АДАПТАЦИИ МЕНЕДЖЕРА · 4 ДНЯ</div><h1>Старт в продажах</h1><p>Программа следует плану стажировки Mavis: день 1 — компания и продукты; день 2 — углубление, скрипт и КП; день 3 — Bitrix; день 4 — звонки и экзамен. Вся теория, задания и разбор ответов находятся в академии.</p></div><div class="hero-art">📚</div></div><div class="days">${SALES_CURRICULUM.map((d,i)=>`<div class="day"><div class="number">ДЕНЬ ${i+1}</div><h3>${E(d.title.replace(/^День \d+ · /,''))}</h3><p>${E(d.subtitle)}</p><div class="day-foot"><span class="pill">${d.modules.length} учебных блоков</span><button class="btn soft" onclick="openDay('sales',${i})">Открыть →</button></div></div>`).join('')}</div>`)}
 function lessonSales(){let d=cur(),m=mod(),n=d.modules.length,completed=Object.keys(progressState).filter(x=>x.startsWith(pkey()+'m')&&progressState[x].passed).length;return shell(`<div class="lesson full-lesson"><button class="back" onclick="setScreen('course','sales')">← К программе</button><div class="day-top"><div><div class="eyebrow">ДЕНЬ ${s.day+1} · ПЛАН АДАПТАЦИИ</div><h1>${E(d.title)}</h1><p class="muted" style="margin-top:9px">${E(d.subtitle)}</p></div><div class="pill">${s.step+1} / ${n}</div></div><div class="progress"><span style="width:${Math.round((s.step+1)/n*100)}%"></span></div><div class="module-nav">${d.modules.map((v,i)=>`<button title="${E(v.title)}" class="${i===s.step?'active':''}" onclick="goSales(${i})">${i+1}</button>`).join('')}</div>${renderMod(m)}<div class="bottom-actions"><button class="btn ghost" onclick="goSales(${s.step-1})" ${s.step===0?'disabled':''}>← Назад</button><span class="small">${completed} из ${n} блоков закреплено</span><button class="btn alt" onclick="goSales(${s.step+1})" ${s.step===n-1?'disabled':''}>Дальше →</button></div></div>`)}
 function renderMod(m){let part='';if(m.kind==='video')part=renderVideo(m);if(m.kind==='reading')part=renderReading(m);if(m.kind==='choice')part=renderChoice(m);if(m.kind==='match')part=renderMatch(m);if(m.kind==='write')part=renderWrite(m);if(m.kind==='order')part=renderOrder(m);if(m.kind==='exam')part=renderExam(m);return `<section class="stage"><div class="stage-top"><div class="stage-icon">${{video:'🎬',reading:'📚',choice:'🎯',match:'🧩',write:'✍️',order:'🔢',exam:'🏆'}[m.kind]}</div><div><div class="eyebrow">${{video:'ВИДЕО В НАЧАЛЕ ТЕМЫ',reading:'ПОДРОБНАЯ ТЕОРИЯ',choice:'ВОПРОС ПО ПРЕДЫДУЩЕМУ ТЕКСТУ',match:'ИГРА ПО ИЗУЧЕННЫМ ПОНЯТИЯМ',write:'ПИСЬМЕННАЯ ПРАКТИКА В АКАДЕМИИ',order:'ПРАВИЛЬНАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ',exam:'ИТОГОВЫЙ ИГРОВОЙ ЭКЗАМЕН'}[m.kind]}</div><h2>${E(m.title)}</h2></div></div>${part}</section>`}
-function renderVideo(m){return `<div class="video-wrap"><video controls preload="metadata" playsinline style="width:100%;border-radius:17px" src="${E(m.file)}"></video></div>`}
+function renderVideo(m){return `<div class="video-wrap"><video controls preload="metadata" playsinline style="width:100%;border-radius:17px" src="${E(m.file)}?v=7.0"></video></div>`}
 function renderReading(m){return `<div class="longread">${m.paras.map((p,i)=>`<div class="reading-paragraph"><div class="readnum">${i+1}</div><p>${E(p)}</p></div>`).join('')}</div>`}
 function renderChoice(m){let a=answerFor(),chosen=a.v;return `<p class="prompt">${E(m.question)}</p><div class="game"><div class="choices">${m.options.map((v,i)=>`<button class="choice ${chosen===i?(i===m.correct?'selected':'wrong'):''}" onclick="salesChoice(${i})">${E(v)}</button>`).join('')}</div>${salesFeedback?`<div class="feedback ${salesFeedback.ok?'':'bad'}">${E(salesFeedback.msg)}</div>`:''}</div>`}
 function salesChoice(v){let m=mod(),ok=v===m.correct;saveMod({v,passed:ok});salesFeedback={ok,msg:ok?'Правильно! Этот принцип уже объяснялся в тексте.':m.hint};render()}
@@ -211,19 +211,43 @@ function renderEducationBody(body){
     return '<p>'+lines.map(x=>academyText(x)).join('<br>')+'</p>';
   }).join('');
 }
+// Teach the distinction between the TYPE of construction and the actual LIST OF WORKS.
+function constructionTypeLesson(){
+ const cards=[
+  ['Текущий ремонт','Работы на существующем объекте, направленные на поддержание его состояния без признаков капитального ремонта или реконструкции.','Например, окраска стен и замена отдельных элементов отделки.','Не классифицируй любую штукатурку автоматически как текущий ремонт — сначала выясни контекст объекта и документации.'],
+  ['Новое строительство','Создание ранее не существовавшего здания или сооружения.','Например, строительство нового складского здания.','Уточни объект и его класс сложности, а затем конкретные работы подрядчика.'],
+  ['Капитальный ремонт','Восстановление эксплуатационных и технических характеристик объекта по проекту капитального ремонта.','Например, комплексная замена конструктивных элементов кровли.','Не путай с текущим ремонтом — значение имеет состав и характер работ.'],
+  ['Реконструкция','Изменение объекта, его параметров или назначения в рамках реконструкции.','Например, переустройство склада под торговое помещение.','Изучи проектную документацию, не делай вывод только по словам заказчика.'],
+  ['Модернизация','Улучшение технических, эксплуатационных либо функциональных характеристик объекта.','Например, работы по модернизации инженерных систем.','Модернизация не является отдельной специализацией прораба или видом СМР.']
+ ];
+ return `<div class="edu-explainer"><div class="edu-explainer-head"><span class="edu-bubble">1</span><div><h4>Виды строительства — это характеристика проекта</h4><p>Это НЕ перечень работ для области СПК. На этом шаге выясняем, что происходит с объектом: его строят, ремонтируют, реконструируют или модернизируют.</p></div></div><div class="edu-example-grid">${cards.map(c=>`<div class="edu-example-card"><h5>${E(c[0])}</h5><p>${E(c[1])}</p><div class="edu-example"><b>Пример</b> ${E(c[2])}</div><div class="edu-caution">${E(c[3])}</div></div>`).join('')}</div><div class="edu-rule"><b>Что спросить у клиента:</b> какой объект и класс сложности, что указано в проектной документации и договоре, какие конкретные работы выполняет подрядчик.</div></div>`;
+}
+function workTypesLesson(){
+ const groups=[
+  ['Общестроительные', 'Устройство фундаментов; монолитные бетонные и железобетонные конструкции; монтаж стальных конструкций; каменные работы; кровельные работы; полы; штукатурные и облицовочные работы; отдельные работы по благоустройству.'],
+  ['Санитарно-технические','Отопление; вентиляция и кондиционирование; водоснабжение и канализация; технологические трубопроводы.'],
+  ['Электромонтажные','Электромонтажные работы; системы автоматизации; слаботочные сети и системы.']
+ ];
+ return `<div class="edu-explainer"><div class="edu-explainer-head"><span class="edu-bubble">2</span><div><h4>Виды строительно-монтажных работ — это содержание работы подрядчика</h4><p>А вот эти работы входят в область СПК. Внутри каждой группы есть подвиды. Именно по ним уточняются специалисты, технологические карты и средства измерения.</p></div></div><div class="edu-example-grid">${groups.map(g=>`<div class="edu-example-card"><h5>${E(g[0])}</h5><p>${E(g[1])}</p></div>`).join('')}</div><div class="edu-rule"><b>Пример диагностики:</b> подрядчик делает кровлю и электрику. Нужно выяснить подвиды обеих работ, подобрать область СПК и отдельно проверить специалистов, приборы и карты по каждому направлению.</div><p class="edu-footnote">Это учебная группировка основных направлений из паспорта СПК, не полный официальный перечень. Полная область и требования определяются по действующим документам для конкретного клиента.</p></div>`;
+}
+function spkScopeLesson(body){
+ return workTypesLesson()+`<details class="edu-original"><summary>Посмотреть полный исходный перечень из паспорта СПК</summary><div class="edu-original-content">${renderEducationBody(body)}</div></details>`;
+}
 function renderEducationDocument(raw,title){
   const rows=splitSourceRows(raw);
   if(rows.length<3){
     return `<div class="edu-document"><h3>${E(title)}</h3>`+renderEducationBody(String(raw).replace(/^---[\s\S]*?---\s*/, '').replace(/^\|.*\|$/gm,''))+'</div>';
   }
-  const count=rows.filter(r=>!r.sheet && r.body.trim()).length;
-  return `<article class="edu-document"><div class="edu-intro"><h3>${E(title)}</h3><p>Изучи материал по темам. Каждая карточка — отдельный вопрос о продукте: определение, требования, документы или порядок работы.</p><span class="pill">${count} разделов</span></div>`+
+  let count=rows.filter(r=>!r.sheet && r.body.trim()).length;
+  const isSpk=/0101.*СПК/i.test(title)||/Паспорт продукта.*СПК/i.test(title);
+  return `<article class="edu-document"><div class="edu-intro"><h3>${E(title)}</h3><p>Данные распределены по темам. Сначала выясняем вид строительства, затем реальные виды работ, затем — требования к документам и специалистам.</p><span class="pill">${count} разделов</span></div>`+
   rows.map((r,i)=>{
     if(r.sheet) return `<h3 class="edu-sheet">${E(r.sheet)}</h3>`;
-    const title=r.name.replace(/<br\s*\/?\s*>/gi,' ').replace(/\s+/g,' ').trim();
-    if(!r.body.trim()) return `<h3 class="edu-section-title">${E(title)}</h3>`;
-    const short=r.body.length<550;
-    return `<details class="edu-topic" ${i<7||short?'open':''}><summary><span class="edu-topic-name">${E(title||'Дополнительные сведения')}</span><span class="edu-toggle">Развернуть / свернуть</span></summary><div class="edu-topic-content">${renderEducationBody(r.body)}</div></details>`;
+    const label=r.name.replace(/<br\s*\/?\s*>/gi,' ').replace(/\s+/g,' ').trim();
+    if(!r.body.trim()) return `<h3 class="edu-section-title">${E(label)}</h3>`;
+    if(/Основные виды строительства/i.test(label)) return `<section class="edu-topic edu-special">${constructionTypeLesson()}</section>`;
+    if(isSpk && /ОБЛАСТЬ СПК|Виды строительно|виды работ, включаемые/i.test(label)) return `<section class="edu-topic edu-special">${spkScopeLesson(r.body)}</section>`;
+    return `<details class="edu-topic" ${i<6?'open':''}><summary><span class="edu-topic-name">${E(label||'Дополнительные сведения')}</span><span class="edu-toggle">Развернуть / свернуть</span></summary><div class="edu-topic-content">${renderEducationBody(r.body)}</div></details>`;
   }).join('')+'</article>';
 }
 async function showSource(i){
