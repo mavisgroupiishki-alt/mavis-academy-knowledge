@@ -136,8 +136,8 @@ render=function(){if(s.track==='sales'&&s.screen==='course'){s.day=0;el.innerHTM
 function courseSales(){return shell(`<button class="back" onclick="setScreen('home')">← Все направления</button><div class="hero"><div><div class="eyebrow">ПЛАН АДАПТАЦИИ МЕНЕДЖЕРА · 4 ДНЯ</div><h1>Старт в продажах</h1><p>Программа следует плану стажировки Mavis: день 1 — компания и продукты; день 2 — углубление, скрипт и КП; день 3 — Bitrix; день 4 — звонки и экзамен. Вся теория, задания и разбор ответов находятся в академии.</p></div><div class="hero-art">📚</div></div><div class="days">${SALES_CURRICULUM.map((d,i)=>`<div class="day"><div class="number">ДЕНЬ ${i+1}</div><h3>${E(d.title.replace(/^День \d+ · /,''))}</h3><p>${E(d.subtitle)}</p><div class="day-foot"><span class="pill">${d.modules.length} учебных блоков</span><button class="btn soft" onclick="openDay('sales',${i})">Открыть →</button></div></div>`).join('')}</div>`)}
 function lessonSales(){let d=cur(),m=mod(),n=d.modules.length,completed=Object.keys(progressState).filter(x=>x.startsWith(pkey()+'m')&&progressState[x].passed).length;return shell(`<div class="lesson full-lesson"><button class="back" onclick="setScreen('course','sales')">← К программе</button><div class="day-top"><div><div class="eyebrow">ДЕНЬ ${s.day+1} · ПЛАН АДАПТАЦИИ</div><h1>${E(d.title)}</h1><p class="muted" style="margin-top:9px">${E(d.subtitle)}</p></div><div class="pill">${s.step+1} / ${n}</div></div><div class="progress"><span style="width:${Math.round((s.step+1)/n*100)}%"></span></div><div class="module-nav">${d.modules.map((v,i)=>`<button title="${E(v.title)}" class="${i===s.step?'active':''}" onclick="goSales(${i})">${i+1}</button>`).join('')}</div>${renderMod(m)}<div class="bottom-actions"><button class="btn ghost" onclick="goSales(${s.step-1})" ${s.step===0?'disabled':''}>← Назад</button><span class="small">${completed} из ${n} блоков закреплено</span><button class="btn alt" onclick="goSales(${s.step+1})" ${s.step===n-1?'disabled':''}>Дальше →</button></div></div>`)}
 function renderMod(m){let part='';if(m.kind==='video')part=renderVideo(m);if(m.kind==='reading')part=renderReading(m);if(m.kind==='choice')part=renderChoice(m);if(m.kind==='match')part=renderMatch(m);if(m.kind==='write')part=renderWrite(m);if(m.kind==='order')part=renderOrder(m);if(m.kind==='exam')part=renderExam(m);return `<section class="stage"><div class="stage-top"><div class="stage-icon">${{video:'🎬',reading:'📚',choice:'🎯',match:'🧩',write:'✍️',order:'🔢',exam:'🏆'}[m.kind]}</div><div><div class="eyebrow">${{video:'ВИДЕО В НАЧАЛЕ ТЕМЫ',reading:'ПОДРОБНАЯ ТЕОРИЯ',choice:'ВОПРОС ПО ПРЕДЫДУЩЕМУ ТЕКСТУ',match:'ИГРА ПО ИЗУЧЕННЫМ ПОНЯТИЯМ',write:'ПИСЬМЕННАЯ ПРАКТИКА В АКАДЕМИИ',order:'ПРАВИЛЬНАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ',exam:'ИТОГОВЫЙ ИГРОВОЙ ЭКЗАМЕН'}[m.kind]}</div><h2>${E(m.title)}</h2></div></div>${part}</section>`}
-function renderVideo(m){return `<div class="video-wrap"><video controls preload="metadata" playsinline style="width:100%;border-radius:17px" src="${E(m.file)}"></video></div><p>${E(m.transcript)}</p><div class="hintline">Видео можно пересматривать. После него идут точные определения, алгоритмы и примеры.</div>`}
-function renderReading(m){return `<div class="longread">${m.paras.map((p,i)=>`<div class="reading-paragraph"><div class="readnum">${i+1}</div><p>${E(p)}</p></div>`).join('')}</div><div class="callout"><strong>Что дальше?</strong><p>Следующее задание проверяет именно понятия и алгоритмы, перечисленные выше. При ошибке будет подсказка, какой раздел перечитать.</p></div>`}
+function renderVideo(m){return `<div class="video-wrap"><video controls preload="metadata" playsinline style="width:100%;border-radius:17px" src="${E(m.file)}"></video></div>`}
+function renderReading(m){return `<div class="longread">${m.paras.map((p,i)=>`<div class="reading-paragraph"><div class="readnum">${i+1}</div><p>${E(p)}</p></div>`).join('')}</div>`}
 function renderChoice(m){let a=answerFor(),chosen=a.v;return `<p class="prompt">${E(m.question)}</p><div class="game"><div class="choices">${m.options.map((v,i)=>`<button class="choice ${chosen===i?(i===m.correct?'selected':'wrong'):''}" onclick="salesChoice(${i})">${E(v)}</button>`).join('')}</div>${salesFeedback?`<div class="feedback ${salesFeedback.ok?'':'bad'}">${E(salesFeedback.msg)}</div>`:''}</div>`}
 function salesChoice(v){let m=mod(),ok=v===m.correct;saveMod({v,passed:ok});salesFeedback={ok,msg:ok?'Правильно! Этот принцип уже объяснялся в тексте.':m.hint};render()}
 function renderMatch(m){let a=answerFor(),selected=a.choices||{},answers=m.pairs.map(x=>x[1]).reverse();return `<p class="prompt">Каждое определение было дано в теории до этого блока. Выбери правильное объяснение из списка.</p><div class="game"><div class="matching">${m.pairs.map((p,i)=>`<div class="matchrow"><div class="term">${E(p[0])}</div><select onchange="saleMatchPick(${i},this.value)"><option value="">Выбери объяснение</option>${answers.map((v,j)=>`<option ${String(selected[i])===String(j)?'selected':''} value="${j}">${E(v)}</option>`).join('')}</select></div>`).join('')}</div><button class="btn alt" onclick="checkSalesMatch()">Проверить пары</button>${salesFeedback?`<div class="feedback ${salesFeedback.ok?'':'bad'}">${E(salesFeedback.msg)}</div>`:''}</div>`}
@@ -168,5 +168,76 @@ SALES_CURRICULUM[1].modules.splice(14,0,{kind:'library',title:'Полные ск
 SALES_CURRICULUM[2].modules.splice(4,0,{kind:'library',title:'Полная инструкция по документам и скрипты',sources:SOURCE_LIBRARY.scripts});
 const originalRenderMod=renderMod;
 renderMod=function(m){if(m.kind!=='library')return originalRenderMod(m);return `<section class="stage"><div class="stage-top"><div class="stage-icon">📙</div><div><div class="eyebrow">ПОЛНЫЕ МАТЕРИАЛЫ ВНУТРИ АКАДЕМИИ</div><h2>${E(m.title)}</h2></div></div><p>Это полный материал из внутренней базы Mavis, а не короткая выжимка. Открывай документы по очереди и изучай конкретные требования, этапы, документы и примеры.</p><div class="library-tabs">${m.sources.map((path,i)=>`<button class="btn soft" onclick="showSource(${i})">${E(path.split('/').pop().replace('.md','').replace('Паспорт продукта — ','').replace('Скрипты — ',''))}</button>`).join('')}</div><div id="library-body" class="library-body">Выбери документ выше, чтобы прочитать его здесь.</div></section>`};
-async function showSource(i){let m=mod(),node=document.getElementById('library-body');node.textContent='Загружаю документ…';let path=m.sources[i];try{let res=await fetch('/api/knowledge/document?path='+encodeURIComponent(path));let data=await res.json();if(!data.content)throw Error('empty');let raw=data.content.replace(/^---[\s\S]*?---\s*/, '').replaceAll('<br>','\n').replaceAll('<br/>','\n').replaceAll('&nbsp;',' ').replace(/\|\s*B\d+\s*\|/g,'|');let lines=raw.split('\n').filter(x=>x.trim());let cleaned=lines.map(l=>l.replace(/^\|\s*[AB]\d+\s*\|/,'').replace(/^\|\s*---\s*\|.*/,'').replace(/^\|\s*([AB]\d+)\s*\|/,'').replace(/\|\s*$/,'').trim()).filter(Boolean).join('\n');node.innerHTML='<div class="callout"><strong>'+E(path.split('/').pop())+'</strong></div><div class="full-source">'+E(cleaned)+'</div>'}catch{node.textContent='Не удалось загрузить документ. Проверь подключение к интернету и попробуй ещё раз.'}}
+
+// Turn the original spreadsheet export into structured educational sections.
+// Keep the original wording, but separate each source row into a named topic and its details.
+function academyText(value){
+  return E(String(value||'').replace(/<br\s*\/?\s*>/gi,'\n').replace(/&nbsp;/g,' '));
+}
+function splitSourceRows(raw){
+  const text=String(raw||'').replace(/^---[\s\S]*?---\s*/, '');
+  const lines=text.split(/\r?\n/), rows=[];
+  let row=null;
+  for(const line of lines){
+    const found=line.match(/^\|\s*(A\d+)\s*\|\s*([\s\S]*?)\s*\|\s*$/);
+    // Some tables use two or three columns: "| A15 | label |" and "| B15 | details |".
+    const data=line.match(/^\|\s*([AB])(\d+)\s*\|\s*([\s\S]*?)\s*\|\s*$/);
+    if(data){
+      if(row && (row.num!==data[2])){rows.push(row);row=null;}
+      if(!row) row={num:data[2],name:'',body:''};
+      if(data[1]==='A') row.name=data[3];
+      else row.body=data[3];
+    }else if(row && line.trim() && !line.startsWith('## Лист:')){
+      row.body+='\n'+line;
+    }else if(line.startsWith('## Лист:')){
+      if(row){rows.push(row);row=null;}
+      rows.push({sheet:line.replace(/^## Лист:\s*/, '')});
+    }
+  }
+  if(row) rows.push(row);
+  return rows.filter(x=>x.sheet||x.name.trim()||x.body.trim());
+}
+function renderEducationBody(body){
+  const normalized=String(body||'')
+     .replace(/<br\s*\/?\s*>/gi,'\n')
+     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$1 — $2')
+     .replace(/\r/g,'');
+  const blocks=normalized.split(/\n{2,}/).map(x=>x.trim()).filter(Boolean);
+  return blocks.map(chunk=>{
+    const lines=chunk.split('\n').map(x=>x.trim()).filter(Boolean);
+    if(lines.length>1 && lines.filter(x=>/^([✔✅•\-]|\d+[.)])\s*/.test(x)).length>=Math.max(1,Math.floor(lines.length*.5))){
+      return '<ul class="edu-list">'+lines.map(l=>'<li>'+academyText(l.replace(/^([✔✅•\-]|\d+[.)])\s*/,''))+'</li>').join('')+'</ul>';
+    }
+    return '<p>'+lines.map(x=>academyText(x)).join('<br>')+'</p>';
+  }).join('');
+}
+function renderEducationDocument(raw,title){
+  const rows=splitSourceRows(raw);
+  if(rows.length<3){
+    return `<div class="edu-document"><h3>${E(title)}</h3>`+renderEducationBody(String(raw).replace(/^---[\s\S]*?---\s*/, '').replace(/^\|.*\|$/gm,''))+'</div>';
+  }
+  const count=rows.filter(r=>!r.sheet && r.body.trim()).length;
+  return `<article class="edu-document"><div class="edu-intro"><h3>${E(title)}</h3><p>Изучи материал по темам. Каждая карточка — отдельный вопрос о продукте: определение, требования, документы или порядок работы.</p><span class="pill">${count} разделов</span></div>`+
+  rows.map((r,i)=>{
+    if(r.sheet) return `<h3 class="edu-sheet">${E(r.sheet)}</h3>`;
+    const title=r.name.replace(/<br\s*\/?\s*>/gi,' ').replace(/\s+/g,' ').trim();
+    if(!r.body.trim()) return `<h3 class="edu-section-title">${E(title)}</h3>`;
+    const short=r.body.length<550;
+    return `<details class="edu-topic" ${i<7||short?'open':''}><summary><span class="edu-topic-name">${E(title||'Дополнительные сведения')}</span><span class="edu-toggle">Развернуть / свернуть</span></summary><div class="edu-topic-content">${renderEducationBody(r.body)}</div></details>`;
+  }).join('')+'</article>';
+}
+async function showSource(i){
+  let m=mod(),node=document.getElementById('library-body');
+  node.textContent='Загружаю материал…';
+  let path=m.sources[i];
+  try{
+    let res=await fetch('/api/knowledge/document?path='+encodeURIComponent(path));
+    if(!res.ok) throw new Error('network');
+    let data=await res.json();
+    if(!data.content)throw Error('empty');
+    node.innerHTML=renderEducationDocument(data.content,path.split('/').pop().replace('.md',''));
+  }catch{
+    node.textContent='Не удалось загрузить материал. Проверь подключение к интернету и попробуй ещё раз.';
+  }
+}
 window.showSource=showSource;

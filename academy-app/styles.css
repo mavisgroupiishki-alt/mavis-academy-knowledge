@@ -4,3 +4,23 @@
 /* Sales adaptation: deep reading and interleaved exercises */
 .full-lesson{max-width:1100px}.full-lesson .stage{padding:clamp(24px,4vw,46px)}.module-nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 25px}.module-nav button{border:1px solid #bee3db;border-radius:12px;background:#fff;color:#40827b;padding:8px 12px;font-weight:900}.module-nav button.active{background:#00a894;color:#fff}.longread{display:grid;gap:22px}.reading-paragraph{display:grid;grid-template-columns:35px 1fr;align-items:start;gap:16px;border-bottom:1px solid #e9f1f0;padding-bottom:18px}.reading-paragraph .readnum{display:grid;place-items:center;background:#e0f8ee;border-radius:11px;color:#007c6c;font-weight:900;width:34px;height:34px}.reading-paragraph p{margin:0;font-size:17px;line-height:1.87;color:#244358}.stage p.prompt{font-size:19px;color:#19384f;font-weight:800}.exam-question{margin:24px 0;padding:15px 0;border-bottom:1px solid #e4e9ec}.exam-question h3{margin-bottom:12px}.video-wrap{background:#0d2030;padding:12px;border-radius:20px}.video-wrap video{display:block;max-height:420px}.stage .free{min-height:200px}.module-nav button:hover{background:#ddf6eb}@media(max-width:700px){.reading-paragraph{grid-template-columns:1fr}.longread{gap:13px}}
 .library-tabs{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}.library-body{border:1px solid #e0e9e5;background:#fcfffe;border-radius:18px;padding:25px;min-height:120px}.full-source{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.85;color:#28485b;max-height:80vh;overflow:auto}.library-body .callout{margin-top:0}
+/* Structured study material: no nested reading window */
+.full-lesson{max-width:1240px}
+.library-body{max-height:none;overflow:visible;padding:0;background:transparent;border:0;min-height:0}
+.edu-document{display:grid;gap:16px}
+.edu-intro{border-radius:20px;background:#ebf9f2;padding:22px 25px}
+.edu-intro h3{font-size:23px;margin-bottom:8px}
+.edu-intro p{color:#4a6576;font-size:16px;line-height:1.6;margin-bottom:12px}
+.edu-sheet,.edu-section-title{margin:22px 0 6px;font-size:21px;line-height:1.3;color:#176f74}
+.edu-section-title{background:#e7f4fb;padding:14px 18px;border-radius:16px}
+.edu-topic{border:1px solid #dfe9e7;background:white;border-radius:18px;overflow:hidden}
+.edu-topic summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:19px 22px;background:#f3faf9}
+.edu-topic summary::-webkit-details-marker{display:none}
+.edu-topic[open] summary{background:#e7f6f1;border-bottom:1px solid #d4eae3}
+.edu-topic-name{font-size:18px;font-weight:900;line-height:1.4;color:#163e50}
+.edu-toggle{font-size:12px;white-space:nowrap;color:#258d84;font-weight:900}
+.edu-topic-content{padding:22px 26px;display:grid;gap:16px}
+.edu-topic-content p{font-size:16px;line-height:1.8;margin:0;color:#25475b}
+.edu-list{margin:0;padding-left:23px;display:grid;gap:9px;color:#25475b;font-size:16px;line-height:1.75}
+.edu-topic-content p br{content:'';display:block;margin-bottom:7px}
+@media(max-width:700px){.edu-topic summary{display:block}.edu-toggle{display:block;margin-top:9px}.edu-topic-content{padding:16px}}
