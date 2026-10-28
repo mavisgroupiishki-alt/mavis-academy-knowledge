@@ -1,0 +1,10 @@
+.DS_Store
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+*.backup
+*.bak
+*.tmp
+*.log
+.env
+.env.*
+!.env.example

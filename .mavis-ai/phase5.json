@@ -1,0 +1,9 @@
+{
+  "phase": 5,
+  "status": "pilot",
+  "obsidian_write_mode": "proposal_then_explicit_human_apply",
+  "bitrix_write_enabled": false,
+  "proposal_dir": "/Users/admin/MavisAI/proposals",
+  "backup_dir": "/Users/admin/MavisAI/backups",
+  "updated_at": "2026-08-28T13:27:10"
+}

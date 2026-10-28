@@ -1,0 +1,9 @@
+{
+  "id": "mavis-ai-panel",
+  "name": "Obsidian AI",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.0",
+  "description": "Ask the local Obsidian AI assistant from a safe desktop sidebar.",
+  "author": "Mavis Group",
+  "isDesktopOnly": true
+}

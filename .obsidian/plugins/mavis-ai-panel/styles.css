@@ -1,0 +1,29 @@
+.mavis-ai-panel {
+  padding: 12px;
+}
+
+.mavis-ai-panel textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+}
+
+.mavis-ai-panel__actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.mavis-ai-panel__hint,
+.mavis-ai-panel__error {
+  color: var(--text-muted);
+}
+
+.mavis-ai-panel__error {
+  color: var(--text-error);
+}
+
+.mavis-ai-panel__answer {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

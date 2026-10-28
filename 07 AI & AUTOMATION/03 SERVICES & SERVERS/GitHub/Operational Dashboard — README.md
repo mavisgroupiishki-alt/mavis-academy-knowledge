@@ -1,0 +1,156 @@
+---
+type: repository_documentation
+source: GitHub
+source_url: https://github.com/mavisgroupiishki-alt/mavis-operational-dashboard/blob/main/README.md
+updated_at: 2026-10-26
+secrets: excluded
+---
+
+# MAVIS Operational Dashboard v2.8.0
+
+Рабочая версия дашборда ОП + Производство для Bitrix24.
+
+## Ключевые изменения v2.8.0
+
+### Продажи — исправлена логика результата
+Основной показатель **Продажи / Сумма продаж** теперь считается строго так же, как пользовательский фильтр Bitrix:
+
+- `Дата завершения (CLOSEDATE)` попадает в выбранный период;
+- сделка находится на стадии, в названии которой есть **«Оплата получена»**;
+- сумма берётся из стандартного поля сделки **«Сумма» (`OPPORTUNITY`)**;
+- товарные строки используются только для продуктовой аналитики и больше не подменяют сумму сделки.
+
+На странице Продажи отображается текущая формула фильтра.
+
+Также исправлена конверсия `Квал. лид → сделка` в режиме «Итого»: предыдущий хвост больше не делится на лиды одного отчётного месяца.
+
+### NPS вручную — много оценок
+Теперь NPS не перезаписывается одним значением на эксперта.
+Каждый ответ добавляется отдельной записью 0–10.
+
+- у эксперта показывается среднее и количество оценок;
+- общий NPS отдела — средневзвешенное по всем введённым оценкам;
+- в форме видна история оценок;
+- ошибочную запись можно удалить;
+- старые одиночные значения v2.4 автоматически мигрируют в историю.
+
+### Расшифровки
+- поле поиска очищается при каждом новом открытии;
+- отключено браузерное автозаполнение поиска;
+- первая загрузка расшифровки — до 500 записей из уже готового snapshot;
+- для обычных выборок группировка строится уже по полному набору, а не по первым 100;
+- счётчик показывает `всего / показано`.
+
+### «Акт есть»
+Отдельный KPI `% с актом` и контроль `Закрытые без акта` убраны из интерфейса: это поле не используется как управленческий показатель. **Сумма закрытых** производства по-прежнему считается по успешно закрытым продуктам и дате завершения.
+
+## Хранение
+При наличии `SUPABASE_URL` + `SUPABASE_KEY` планы, комментарии, команда, NPS и настройки сохраняются в Supabase и не теряются при redeploy Render.
+
+## Render
+Сборка рассчитана на Render Free (`plan: free`) и Supabase для постоянных ручных данных.
+
+### Чистая выручка
+
+Для общего итога продаж задайте `CLEAN_REVENUE_URL` с точным HTTPS-адресом
+маршрута приложения «График платежей»
+`/api/integrations/operations/clean-revenue` и общий секрет
+`CLEAN_REVENUE_TOKEN`. Дашборд использует только агрегат `cleanRevenue` и не
+подменяет его суммой сделок Bitrix24, если источник недоступен.
+
+Для read-only разделов «Звонки продажи» и «Аудит CRM» задайте HTTPS-корень
+Jarvis в `JARVIS_OPERATIONS_URL` и его отдельный общий секрет в
+`JARVIS_OPERATIONS_TOKEN`. Сервис дашборда запрашивает Jarvis сам и не
+передаёт этот секрет в браузер.
+
+
+## v2.8.0 — исправление логики ОП
+- Продажа = стадия «15. Продажа успешна».
+- Дата продажи = MOVED_TIME (дата изменения стадии), не CLOSEDATE.
+- Итог месяца = продажи отчетного периода + хвост, созданный до начала месяца.
+- Сумма = OPPORTUNITY сделки.
+- Убрано ошибочное совпадение со стадией «Предоплата получена».
+
+
+## v2.8.0
+- В продуктовой таблице добавлена колонка «Закрыто из новых», чтобы конверсия была прозрачной.
+- Конверсия продукта = закрыто из новых / новых.
+- Добавлены планы по продуктам: план шт и BYN, факт и % выполнения.
+- На вкладке «Планы / настройки» появился отдельный блок планов производства по продуктам.
+
+
+## v2.8.0
+- Продажи разбиты на отдельные управленческие блоки: лиды, сделки/продажи, продукты.
+- В каждом блоке показана недельная динамика.
+- Недельная динамика раскрывается до дней.
+- Источники раскрываются: тип продаж → источник Bitrix → отчётный период / хвост → дни.
+- Та же структура доступна отдельно по каждому менеджеру.
+- В настройках можно вручную назначать источник в Холодные / Входящие / Повторные / Прочее или исключать из разбивки.
+- Настройки источников сохраняются через существующее постоянное хранилище Supabase.
+
+
+## v2.8.0
+- Frontend cache disabled to prevent old JS/CSS after deploy.
+- Static assets use versioned URLs.
+- Small v2.8.0 build marker appears bottom-right for verification.
+
+
+## v2.8.0 FAST
+- Persist successful summary snapshots in Supabase.
+- Show last snapshot immediately after Render restart/redeploy while refreshing Bitrix in background.
+- Load product rows only for current-month deals and actual monthly sales.
+- Run product-row Bitrix batches concurrently (4 batches / up to 200 deals in flight).
+- 15-minute in-memory product-row cache.
+- `sync_seconds` is included for diagnostics.
+
+## v2.8.0
+- Недельная динамика раскрывает дни внутри той же таблицы, без дополнительных отчетов ниже.
+- У каждого типа трафика появилась кнопка «Изменить».
+- Источники Bitrix можно добавлять/удалять прямо из блока трафика; настройки сохраняются через Supabase.
+- «Сумма продуктов» подписана как сумма товарных строк Bitrix (цена × количество).
+
+
+## v2.8.0
+- Sales page redesigned into one compact operational screen.
+- Only 3 summary blocks remain: Leads, Deals/Sales, Products.
+- Main matrix: Manager → traffic type → Bitrix source → Current/Previous period → actual dates.
+- Daily rows show real dates (01.08, 02.08, ...), not day numbers.
+- Redundant long weekly/source/manager reports removed from the main sales page.
+- Traffic editing remains available as a compact strip.
+
+## v2.9.4 — RNP 09.2026
+- Sales tab rebuilt around the actual 09.2026 RNP structure.
+- Three primary blocks: Cold / Incoming / Repeat sales.
+- Exact RNP metrics added, including lost deals and two sale-conversion variants.
+- Monthly Plan / Fact / % by traffic block.
+- Weekly plan is automatically distributed by business days of the selected month.
+- Each work-week expands to daily facts with real dates.
+- Managers and product breakdowns remain.
+- Product conversion is explicitly defined as cohort product sales; tail is excluded.
+- Traffic auto-classification updated to the exact business rules agreed in chat.
+
+## v2.9.4 — FAST CACHE
+- Last successful month snapshot is stored in browser localStorage.
+- Dashboard renders the browser snapshot immediately after deploy/reload and refreshes Bitrix in background.
+- Full server snapshot is persisted before sync is considered successful.
+- /health shows whether Supabase credentials are really configured and the latest storage error.
+
+## v2.9.4
+- Removed technical blue sales filter hint from UI.
+- Removed visible RNP labels.
+- Cold / Incoming / Repeat sales are compact collapsed blocks by default.
+- Each collapsed block shows: current period, previous/tail, total month sales, revenue plan.
+- Click the block to expand plan/fact, weekly/daily dynamics and sources.
+
+## v2.9.4
+- Drilldown details are persisted alongside the KPI snapshot.
+- Details are restored from persistent storage after Render redeploy.
+- Frontend safely handles non-JSON Render responses and never exposes raw `Unexpected token '<'`.
+- Drilldowns auto-retry while the service/details are warming up.
+
+## v2.9.4
+- Hard separation between created deals and successful sales.
+- Successful sales/revenue include only agreed stages 14 and 15.
+- Refused/lost deals are explicitly excluded from sales, revenue and sold-product metrics.
+- "Сумма сделок" renamed to "Сумма созданных сделок" to avoid confusion.
+

@@ -1,0 +1,30 @@
+{
+  "name": "Mavis AI",
+  "vault": "Mavis Knowledge",
+  "version": 1,
+  "knowledge_policy": {
+    "prefer_sources": [
+      "Bitrix24 for current CRM facts",
+      "GitHub for current code",
+      "Obsidian for documented knowledge and decisions",
+      "Drive/Sheets for source documents and calculations"
+    ],
+    "never_store_secrets_in_markdown": true,
+    "critical_actions_require_human_approval": true,
+    "unknown_facts_must_be_marked_todo": true
+  },
+  "paths": {
+    "home": "00 HOME",
+    "company": "01 COMPANY",
+    "bitrix": "06 BITRIX24",
+    "ai": "07 AI & AUTOMATION",
+    "projects": "08 PROJECTS",
+    "sop": "09 SOP",
+    "data": "10 DATA & ANALYTICS",
+    "decisions": "11 DECISIONS",
+    "prompts": "12 PROMPTS",
+    "archive": "90 ARCHIVE",
+    "attachments": "98 ATTACHMENTS",
+    "inbox": "99 INBOX"
+  }
+}
