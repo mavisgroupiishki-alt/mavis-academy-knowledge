@@ -1,4 +1,65 @@
-<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f7f8fb"><title>Mavis Academy · Обучение команды</title><link rel="stylesheet" href="styles.css"></head><body>
-<div class="app"><aside class="sidebar"><div class="brand"><div class="mark">m<span>.</span></div><div><strong>MAVIS</strong><small>ACADEMY</small></div></div><div class="side-label">РАБОЧЕЕ ПРОСТРАНСТВО</div><nav id="nav"><button class="nav-item active" data-view="home"><span>◫</span> Мой план</button><button class="nav-item" data-view="courses"><span>▤</span> Курсы</button><button class="nav-item" data-view="practice"><span>◇</span> Практика и тесты</button><button class="nav-item" data-view="manager"><span>▦</span> Аналитика обучения</button><button class="nav-item" data-view="sources"><span>⌁</span> База знаний</button></nav><div class="sidebar-bottom"><div class="tiny-label">ТЕКУЩАЯ ПРОГРАММА</div><div class="mini-course"><div class="mini-icon">↗</div><div><strong>Отдел продаж</strong><small>7 дней · пилот</small></div></div><div class="muted-xs">MVP · демонстрационный режим</div></div></aside>
-<main class="main"><header class="top"><div class="crumbs">Обучение сотрудников <span>/</span> <strong id="crumb">Мой план</strong></div><div class="top-right"><span class="sync"><i></i> Источник: Obsidian / GitHub</span><div class="avatar">МА</div></div></header><div class="content" id="content"></div></main></div>
-<script src="app.js"></script><script>fetch("/api/knowledge/status").then(r=>r.json()).then(d=>{const n=document.querySelector(".sync");if(n)n.textContent=d.connected?"● Obsidian / GitHub · "+d.commit:"● Источник временно недоступен"}).catch(()=>{});</script></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mavis Academy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-wrap">
+        <div class="brand-mark">M</div>
+        <div>
+          <div class="brand-title">Mavis Academy</div>
+          <div class="brand-subtitle">обучение по отделам</div>
+        </div>
+      </div>
+
+      <nav class="menu">
+        <button class="menu-item active" data-view="dashboard">Главная</button>
+        <button class="menu-item" data-view="sales">Продажи</button>
+        <button class="menu-item" data-view="expert">Эксперты</button>
+        <button class="menu-item" data-view="bitrix">Bitrix24</button>
+        <button class="menu-item" data-view="knowledge">База знаний</button>
+      </nav>
+
+      <div class="sidebar-box">
+        <div class="tiny-label">Формат обучения</div>
+        <ul class="tiny-list">
+          <li>видеоблок</li>
+          <li>теория и регламенты</li>
+          <li>разбор кейсов</li>
+          <li>мини-тренажёры</li>
+          <li>итоговый тест</li>
+        </ul>
+      </div>
+
+      <div class="sidebar-box sidebar-sync">
+        <div class="tiny-label">Источник</div>
+        <div id="syncStatus">Проверяю GitHub…</div>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div>
+          <div class="crumb" id="crumb">Главная</div>
+          <h1 id="pageTitle">Корпоративное обучение Mavis</h1>
+        </div>
+        <div class="top-actions">
+          <div class="pill-status">MVP 2.0</div>
+        </div>
+      </header>
+
+      <section id="content"></section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
