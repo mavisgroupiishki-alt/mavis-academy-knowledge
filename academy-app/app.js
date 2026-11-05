@@ -21,6 +21,16 @@ const DATA={
  ]}
 };
 const names=Object.keys(DATA);let s={track:'sales',day:0,step:0,screen:'home',answers:{},saved:{},done:{}};try{s={...s,...JSON.parse(localStorage.getItem('ma-v3')||'{}')}}catch{};
+function normalizeState(){
+  if(!names.includes(s.track)) s.track='sales';
+  const maxDay=DATA[s.track].days.length-1;
+  if(!Number.isInteger(s.day)||s.day<0||s.day>maxDay) s.day=0;
+  if(!Number.isInteger(s.step)||s.step<0||s.step>7) s.step=0;
+  if(!['home','course','lesson'].includes(s.screen)) s.screen='home';
+  if(!s.answers||typeof s.answers!=='object') s.answers={};
+  if(!s.saved||typeof s.saved!=='object') s.saved={};
+  if(!s.done||typeof s.done!=='object') s.done={};
+}
 const persist=()=>localStorage.setItem('ma-v3',JSON.stringify(s));const key=()=>`${s.track}-${s.day}`;const day=()=>DATA[s.track].days[s.day];const E=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');const el=document.getElementById('app');let feedback=null;let voiceTimer=null;
 function setScreen(scr,t){stopSpeech();s.screen=scr;if(t)s.track=t;persist();render();window.scrollTo(0,0)}
 function openDay(t,i){stopSpeech();s.track=t;s.day=i;s.step=Math.min(7,s.saved[`${t}-${i}`]||0);s.screen='lesson';feedback=null;persist();render();window.scrollTo(0,0)}
@@ -49,5 +59,5 @@ function checkOrder(){let a=s.answers[key()+'-order']||[...day().order].reverse(
 function checkCrossword(){let expected=s.track==='sales'?'АТТЕСТАТ':s.track==='expert'?'ДОКУМЕНТ':'КАРТОЧКА';let v=document.getElementById('crossword').value.trim().toUpperCase();s.answers[key()+'-crossword']=v;persist();feedback={type:'crossword',ok:v===expected,msg:v===expected?'Угадано! 🎉':'Пока нет. Вернись к первому фрагменту урока, где встречается этот термин.'};render()}
 function finishDay(){if(s.answers[key()+'-final']!==day().final[2])return;s.done[key()]=true;persist();setScreen('course')}
 function stopSpeech(){if('speechSynthesis' in window)window.speechSynthesis.cancel()}
-function render(){slide=0;el.innerHTML=s.screen==='home'?home():s.screen==='course'?course():lesson()}
+function render(){normalizeState();slide=0;el.innerHTML=s.screen==='home'?home():s.screen==='course'?course():lesson()}
 render();
