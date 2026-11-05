@@ -26,6 +26,12 @@ SENSITIVE_CONTENT_PATTERNS = (
 QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
 ACCESS_ROLES = {"manager": "ACADEMY_MANAGER_PASS", "expert": "ACADEMY_EXPERT_PASS"}
 ACCESS_TOKEN_TTL = 12 * 60 * 60
+# Training recordings are deliberately allowlisted: the proxy must never become
+# a generic URL fetcher or expose arbitrary Drive files.
+DRIVE_AUDIO_FILES = {
+    "10IokBCk9P3DkbC-F9_Rle7hW7uiBl1Oy": "audio/mpeg",
+    "1kziaHGG_Suqh9mBHXo-dgF2RN8e-GQFx": "audio/mpeg",
+}
 
 
 def is_safe_knowledge_path(path):
@@ -284,7 +290,31 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             return self.respond_json({"error":"unavailable"}, 503)
 
+    def stream_training_audio(self):
+        file_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+        content_type = DRIVE_AUDIO_FILES.get(file_id)
+        if not content_type:
+            return self.respond_json({"error": "not_found"}, 404)
+        try:
+            source = "https://drive.usercontent.google.com/download?id=" + quote(file_id, safe="") + "&export=download&confirm=t"
+            request = Request(source, headers={"User-Agent": "Mavis-Academy"})
+            with urlopen(request, timeout=20) as response:
+                audio = response.read(12 * 1024 * 1024 + 1)
+            if not audio or len(audio) > 12 * 1024 * 1024:
+                raise ValueError("invalid_audio_size")
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(audio)))
+            self.send_header("Accept-Ranges", "none")
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.end_headers()
+            self.wfile.write(audio)
+        except (URLError, HTTPError, TimeoutError, ValueError):
+            return self.respond_json({"error": "audio_unavailable"}, 503)
+
     def do_GET(self):
+        if self.path.startswith("/api/training-audio?"):
+            return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
             return self.get_knowledge_document(require_access=True)
         if self.path.startswith("/api/knowledge/document?"):

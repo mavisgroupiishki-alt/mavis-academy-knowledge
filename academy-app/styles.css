@@ -22,6 +22,7 @@
 .edu-toggle{font-size:12px;white-space:nowrap;color:#258d84;font-weight:900}
 .edu-topic-content{padding:22px 26px;display:grid;gap:16px}
 .edu-topic-content p{font-size:16px;line-height:1.8;margin:0;color:#25475b}
+.edu-inline-title{margin:5px 0 -3px;color:#087a70;font-size:17px;line-height:1.45}
 .edu-list{margin:0;padding-left:23px;display:grid;gap:9px;color:#25475b;font-size:16px;line-height:1.75}
 .edu-topic-content p br{content:'';display:block;margin-bottom:7px}
 @media(max-width:700px){.edu-topic summary{display:block}.edu-toggle{display:block;margin-top:9px}.edu-topic-content{padding:16px}}
@@ -45,6 +46,21 @@
 .edu-original summary{cursor:pointer;padding:18px 22px;font-weight:750;color:#18796f}
 .edu-original-content{padding:20px;line-height:1.7}
 .edu-document,.library-body,.edu-topic-content,.edu-original-content{max-height:none!important;height:auto!important;overflow:visible!important}
+
+/* Call examples stay inside the lesson instead of sending trainees to Drive. */
+.call-example-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.call-example{border:1px solid #dbe9e8;border-radius:20px;padding:21px;background:#fff}
+.call-example.good{background:linear-gradient(145deg,#f3fffa,#fff);border-color:#bde8d7}
+.call-example.bad{background:linear-gradient(145deg,#fff8f2,#fff);border-color:#f1d7bb}
+.call-example-head span{display:inline-block;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:900;letter-spacing:.1em;background:#dff7eb;color:#087a68}
+.call-example.bad .call-example-head span{background:#fff0dc;color:#a6641f}
+.call-example-head h3{margin:11px 0 15px;font-size:19px;line-height:1.35}
+.call-example audio{width:100%;height:42px;display:block;margin:4px 0 17px}
+.call-example-focus{border-radius:13px;background:rgba(238,248,247,.8);padding:14px 15px;color:#26495c}
+.call-example.bad .call-example-focus{background:#fff4e8}
+.call-example-focus b{font-size:14px}.call-example-focus ul{margin:8px 0 0;padding-left:19px;display:grid;gap:6px;font-size:14px;line-height:1.5}
+.call-example-note{margin-top:18px!important;padding:14px 17px;border-radius:14px;background:#eef6ff;color:#31566c;font-size:15px!important;line-height:1.6!important}
+@media(max-width:700px){.call-example-grid{grid-template-columns:1fr}.call-example{padding:17px}}
 
 /* Active-manager knowledge base */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
