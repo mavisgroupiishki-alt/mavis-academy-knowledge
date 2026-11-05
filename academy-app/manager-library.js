@@ -15,13 +15,14 @@
     {id:'processes', icon:'◎', color:'mint', title:'Процессы и сервис', eyebrow:'Стандарт работы', lead:'Касания, зависшие сделки, допродажи, передача в экспертный отдел и сервис.', sources:products('09 SOP',['Регламент — количество касаний с клиентом.md','Регламент — коммуникация с зависшими клиентами.md','Регламент — допродажи.md','Регламент — передача сделок из продаж в экспертный отдел.md','Регламент — сервис коммуникаций.md','Регламент — работа с новыми продуктами.md']), check:{q:'Как поступить с зависшей сделкой?', options:['Оставить без задачи','Проверить факты, договорённость и назначить конкретное касание','Удалить из CRM'], answer:1, order:['Проверить последний контакт','Понять препятствие','Назначить согласованный шаг']}},
     {id:'expert-flow', icon:'✦', color:'navy', title:'Работа эксперта', eyebrow:'Экспертный маршрут', roles:['expert'], lead:'Передача из продаж, подбор специалистов, акты и рабочие процессы экспертного отдела.', sources:products('09 SOP',['Регламент — подбор специалистов.md','Процесс — подбор специалиста.md','Инструкция — подбор специалистов в Bitrix24.md','Регламент — работа с актами выполненных работ.md','Регламент — передача сделок из продаж в экспертный отдел.md']), check:{q:'Что нужно проверить при передаче сделки эксперту?', options:['Только название компании','Полноту исходных данных и зафиксированный следующий шаг','Только сумму сделки'], answer:1, order:['Проверить исходные данные','Уточнить недостающее','Принять и зафиксировать задачу']}}
   ];
-  const state = {page:'catalog', course:'', tab:0, test:false, login:false, role:'manager', error:'', answer:null, order:[], orderChecked:false, matches:{}, matchChecked:false, caseChoices:{}, caseChecked:false};
+  const state = {page:'catalog', course:'', tab:0, test:false, login:false, role:'trainee', error:'', answer:null, order:[], orderChecked:false, matches:{}, matchChecked:false, caseChoices:{}, caseChecked:false};
   const progressKey = 'mavis-academy-product-progress-v2', accessKey = 'mavis-academy-access-v1';
   let progress = {}, access = null;
   try { progress = JSON.parse(localStorage.getItem(progressKey) || '{}'); access = JSON.parse(sessionStorage.getItem(accessKey) || 'null'); } catch (_) {}
   const saveProgress = () => localStorage.setItem(progressKey, JSON.stringify(progress));
   const roleName = role => role === 'leader' ? 'Руководитель' : role === 'expert' ? 'Эксперт' : role === 'trainee' ? 'Стажёр' : 'Менеджер';
-  const traineeCourseIds = new Set(['spk','attestation','iso-suot','licences','product-cert','sales','bitrix']);
+  // Стажёр видит только учебный маршрут. Рабочая база Bitrix открывается после стажировки.
+  const traineeCourseIds = new Set(['spk','attestation','iso-suot','licences','product-cert','sales']);
   const coursesFor = () => {
     const role = access?.role || state.role;
     if (role === 'trainee') return COURSES.filter(course => traineeCourseIds.has(course.id));
