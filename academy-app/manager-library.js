@@ -149,6 +149,7 @@
   window.academyCloseLogin=()=>{if(access){state.login=false;state.error='';render();}else oldSetScreen('home','sales');};
   window.academyLogin=async()=>{const password=document.getElementById('academy-password')?.value||'';state.error='';if(!password){state.error='Введите пароль.';return render();}try{const response=await fetch('/api/access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:state.role,password})});if(!response.ok){state.error=response.status===401?'Пароль не подошёл. Проверьте роль и повторите.':'Вход пока не настроен на сервере.';return render();}access=await response.json();sessionStorage.setItem(accessKey,JSON.stringify(access));state.login=false;render();}catch(_){state.error='Сервер входа временно недоступен.';render();}};
   window.academyLogout=()=>{access=null;sessionStorage.removeItem(accessKey);state.role='manager';state.login=true;render();};
+  window.academyOpenLogin=()=>{access=null;sessionStorage.removeItem(accessKey);state.role='manager';state.login=true;state.page='catalog';state.course='';render();window.scrollTo(0,0);};
   window.academyTrainee=()=>{access={role:'trainee',public:true};state.role='trainee';state.login=false;state.page='catalog';state.course='';render();window.scrollTo(0,0);};
   window.academyAsk=()=>{if(!access){state.login=true;return render();}const question=window.prompt('Что хотите уточнить по базе знаний?');if(!question?.trim())return;fetch('/api/ai/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question})}).then(r=>r.json()).then(data=>alert(data.answer||data.message||'Ответ пока не получен.')).catch(()=>alert('Помощник временно недоступен.'));};
   window.setScreen=(screen, track)=>screen==='manager'?academyCatalog():oldSetScreen(screen,track);
@@ -156,7 +157,7 @@
     if(s.screen!=='home' || document.getElementById('academy-trainee-entry')) return;
     const tracks=document.querySelector('.tracks'); if(!tracks) return;
     const card=document.createElement('div'); card.id='academy-trainee-entry'; card.className='track academy-trainee-entry';
-    card.innerHTML='<div class="glyph">📚</div><h2>Все продукты</h2><p>Полная программа для стажёра: продукты, продажи, CRM и процессы. Материалы, задания и итоговые отметки — внутри Academy.</p><span class="pill">Продуктовые плитки</span><button class="btn alt" onclick="academyTrainee()">Открыть программу →</button>';
+    card.innerHTML='<div class="glyph">📚</div><h2>Все продукты</h2><p>Полная программа для стажёра: продукты, продажи, CRM и процессы. Материалы, задания и итоговые отметки — внутри Academy.</p><span class="pill">Продуктовые плитки</span><div class="academy-entry-actions"><button class="btn alt" onclick="academyTrainee()">Я стажёр →</button><button class="btn" onclick="academyOpenLogin()">Вход сотрудника →</button></div>';
     tracks.appendChild(card);
   }
   window.render=()=>{if(s.screen==='manager')return render();oldRender();addTraineeEntry();};

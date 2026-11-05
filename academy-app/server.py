@@ -35,6 +35,10 @@ ACCESS_TOKEN_TTL = 12 * 60 * 60
 DRIVE_AUDIO_FILES = {
     "10IokBCk9P3DkbC-F9_Rle7hW7uiBl1Oy": "audio/mpeg",
     "1kziaHGG_Suqh9mBHXo-dgF2RN8e-GQFx": "audio/mpeg",
+    "1lvF6Gakb1oCvrmv7Z_8MNgCnzYyy6GwB": "audio/mpeg",
+    "1PFZqGmTlknnXER_iQx5xSikfCKnxh5zG": "audio/mpeg",
+    "1_QIfn-h25-RcMhAOQsyrEBKPR4EOhhDX": "audio/mpeg",
+    "1YWE25VdEruZ_pF3Fc1dn7AJg8S1yQ1Zi": "audio/mpeg",
 }
 
 
@@ -294,7 +298,7 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             return self.respond_json({"error":"unavailable"}, 503)
 
-    def stream_training_audio(self):
+    def stream_training_audio(self, head_only=False):
         file_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
         content_type = DRIVE_AUDIO_FILES.get(file_id)
         if not content_type:
@@ -312,7 +316,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Accept-Ranges", "none")
             self.send_header("Cache-Control", "public, max-age=3600")
             self.end_headers()
-            self.wfile.write(audio)
+            if not head_only:
+                self.wfile.write(audio)
         except (URLError, HTTPError, TimeoutError, ValueError):
             return self.respond_json({"error": "audio_unavailable"}, 503)
 
@@ -340,6 +345,13 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             self.path = "/index.html"
         return super().do_GET()
+
+    def do_HEAD(self):
+        # Chromium first probes audio with HEAD. Without this route the base
+        # static handler returns 404 and the player remains at 0:00.
+        if self.path.startswith("/api/training-audio?"):
+            return self.stream_training_audio(head_only=True)
+        return super().do_HEAD()
 
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
