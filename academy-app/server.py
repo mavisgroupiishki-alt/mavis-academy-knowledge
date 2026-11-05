@@ -143,6 +143,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"mode":"unavailable","message":"AI grader temporarily unavailable"}, 503)
 
     def ask_knowledge(self):
+        stage = "request"
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if length < 2 or length > 9000:
@@ -151,6 +152,7 @@ class Handler(SimpleHTTPRequestHandler):
             question = " ".join(str(payload.get("question", "")).split())[:1800]
             if len(question) < 3:
                 return self.respond_json({"error": "invalid_question"}, 400)
+            stage = "knowledge_source"
             sources = select_knowledge_sources(question)
             if not sources:
                 return self.respond_json({"mode": "unavailable", "message": "Не удалось получить материалы базы знаний"}, 503)
@@ -178,6 +180,7 @@ class Handler(SimpleHTTPRequestHandler):
                 ],
             }).encode("utf-8")
             request = Request(endpoint, data=body, headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"}, method="POST")
+            stage = "ai_provider"
             with urlopen(request, timeout=35) as response:
                 outer = json.load(response)
             answer = str(outer["choices"][0]["message"]["content"]).strip()[:5000]
@@ -186,7 +189,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"mode": "ai", "answer": answer, "sources": [source["path"] for source in sources]})
         except (URLError, HTTPError, TimeoutError, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             # Keep provider payloads out of logs: they can contain user prompts or credentials.
-            print(f"Knowledge assistant failed: {type(exc).__name__}", flush=True)
+            status = f"/{exc.code}" if isinstance(exc, HTTPError) else ""
+            print(f"Knowledge assistant failed at {stage}: {type(exc).__name__}{status}", flush=True)
             return self.respond_json({"mode": "unavailable", "message": "Помощник временно недоступен. Попробуйте ещё раз позже."}, 503)
 
     def get_knowledge_document(self):
