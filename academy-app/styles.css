@@ -6,6 +6,7 @@
 .library-tabs{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}.library-body{border:1px solid #e0e9e5;background:#fcfffe;border-radius:18px;padding:25px;min-height:120px}.full-source{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.85;color:#28485b;max-height:80vh;overflow:auto}.library-body .callout{margin-top:0}
 /* Structured study material: no nested reading window */
 .full-lesson{max-width:1240px}
+.course-detailed-theory{margin:26px 0;padding:30px;border:1px solid #cfe9e4;border-radius:24px;background:linear-gradient(145deg,#f7fffd,#fff)}.course-detailed-theory>span{color:#008d81;font-size:12px;font-weight:900;letter-spacing:.16em}.course-detailed-theory h3{margin:8px 0 18px;color:#173a52;font-size:28px}.course-detailed-theory article{display:grid;grid-template-columns:42px 1fr;gap:16px;padding:18px 0;border-top:1px solid #deecea}.course-detailed-theory article b{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#dff7ee;color:#008878;font-size:19px}.course-detailed-theory article p{margin:0;color:#284b62;font-size:17px;line-height:1.75}@media(max-width:700px){.course-detailed-theory{padding:21px}.course-detailed-theory h3{font-size:23px}.course-detailed-theory article p{font-size:16px}}
 .library-body{max-height:none;overflow:visible;padding:0;background:transparent;border:0;min-height:0}
 .edu-document{display:grid;gap:16px}
 .edu-intro{border-radius:20px;background:#ebf9f2;padding:22px 25px}
