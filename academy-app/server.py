@@ -26,6 +26,7 @@ SENSITIVE_CONTENT_PATTERNS = (
 QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
 ACCESS_ROLES = {
     "leader": "ACADEMY_LEADER_PASS",
+    "trainee": "ACADEMY_TRAINEE_PASS",
     "manager": "ACADEMY_MANAGER_PASS",
     "expert": "ACADEMY_EXPERT_PASS",
 }
@@ -131,11 +132,11 @@ def access_secret():
     return os.getenv("ACADEMY_SESSION_SECRET", "").encode("utf-8")
 
 
-def issue_access_token(role):
+def issue_access_token(role, display_name=""):
     secret = access_secret()
     if not secret:
         raise ValueError("access_not_configured")
-    payload = json.dumps({"role": role, "exp": int(time.time()) + ACCESS_TOKEN_TTL, "nonce": secrets.token_urlsafe(12)}, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps({"role": role, "name": display_name, "exp": int(time.time()) + ACCESS_TOKEN_TTL, "nonce": secrets.token_urlsafe(12)}, separators=(",", ":")).encode("utf-8")
     encoded = _b64(payload)
     signature = _b64(hmac.new(secret, encoded.encode("ascii"), hashlib.sha256).digest())
     return f"{encoded}.{signature}"
@@ -222,13 +223,16 @@ class Handler(SimpleHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             role = str(payload.get("role", ""))
             password = str(payload.get("password", ""))
+            display_name = " ".join(str(payload.get("name", "")).split())[:80]
+            if len(display_name) < 2:
+                return self.respond_json({"error": "invalid_name"}, 400)
             env_name = ACCESS_ROLES.get(role)
             expected = os.getenv(env_name, "") if env_name else ""
             if not expected:
                 return self.respond_json({"error": "not_configured"}, 503)
             if not hmac.compare_digest(password, expected):
                 return self.respond_json({"error": "invalid_credentials"}, 401)
-            return self.respond_json({"role": role, "token": issue_access_token(role), "expires_in": ACCESS_TOKEN_TTL})
+            return self.respond_json({"role": role, "display_name": display_name, "token": issue_access_token(role, display_name), "expires_in": ACCESS_TOKEN_TTL})
         except (ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "invalid_request"}, 400)
 
