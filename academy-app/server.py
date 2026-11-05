@@ -184,7 +184,9 @@ class Handler(SimpleHTTPRequestHandler):
             if not answer:
                 raise ValueError("empty_answer")
             return self.respond_json({"mode": "ai", "answer": answer, "sources": [source["path"] for source in sources]})
-        except (URLError, HTTPError, TimeoutError, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError):
+        except (URLError, HTTPError, TimeoutError, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            # Keep provider payloads out of logs: they can contain user prompts or credentials.
+            print(f"Knowledge assistant failed: {type(exc).__name__}", flush=True)
             return self.respond_json({"mode": "unavailable", "message": "Помощник временно недоступен. Попробуйте ещё раз позже."}, 503)
 
     def get_knowledge_document(self):
