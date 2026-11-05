@@ -24,7 +24,11 @@ SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)(парол[ья]?|api[_ -]?key|token|secret|credential)\s*[:=]\s*\S+"),
 )
 QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
-ACCESS_ROLES = {"manager": "ACADEMY_MANAGER_PASS", "expert": "ACADEMY_EXPERT_PASS"}
+ACCESS_ROLES = {
+    "leader": "ACADEMY_LEADER_PASS",
+    "manager": "ACADEMY_MANAGER_PASS",
+    "expert": "ACADEMY_EXPERT_PASS",
+}
 ACCESS_TOKEN_TTL = 12 * 60 * 60
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
