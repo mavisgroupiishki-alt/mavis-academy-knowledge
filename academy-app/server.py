@@ -4,6 +4,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 import json
 import os
+import re
 import time
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -13,6 +14,10 @@ CACHE = {"at": 0, "data": None}
 KNOWLEDGE_INDEX_CACHE = {"at": 0, "paths": []}
 ALLOWED_KNOWLEDGE_PREFIXES = ("02 PRODUCTS/", "03 SALES/", "04 EXPERT/", "06 BITRIX24/", "09 SOP/")
 UNSAFE_KNOWLEDGE_TERMS = ("парол", "доступ", "ключ", "token", "secret", "credential")
+SENSITIVE_CONTENT_PATTERNS = (
+    re.compile(r"(?i)\b(sk-[a-z0-9_-]{16,}|gsk_[a-z0-9_-]{16,}|cfut_[a-z0-9_-]{16,})\b"),
+    re.compile(r"(?i)(парол[ья]?|api[_ -]?key|token|secret|credential)\s*[:=]\s*\S+"),
+)
 
 
 def is_safe_knowledge_path(path):
@@ -38,7 +43,10 @@ def fetch_knowledge_document(path, limit=80000):
         raise ValueError("not_allowed")
     request = Request(knowledge_raw_url(path), headers={"User-Agent": "Mavis-Academy"})
     with urlopen(request, timeout=12) as response:
-        return response.read(limit).decode("utf-8")
+        content = response.read(limit).decode("utf-8")
+    for pattern in SENSITIVE_CONTENT_PATTERNS:
+        content = pattern.sub("[скрыто]", content)
+    return content
 
 
 def knowledge_paths():
