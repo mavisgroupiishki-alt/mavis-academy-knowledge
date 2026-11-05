@@ -9,6 +9,7 @@ import time
 from urllib.parse import urlparse, parse_qs, quote
 
 ROOT = Path(__file__).resolve().parent
+KNOWLEDGE_ROOT = ROOT.parent.resolve()
 REPO_API = "https://api.github.com/repos/mavisgroupiishki-alt/mavis-academy-knowledge"
 CACHE = {"at": 0, "data": None}
 KNOWLEDGE_INDEX_CACHE = {"at": 0, "paths": []}
@@ -18,6 +19,7 @@ SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)\b(sk-[a-z0-9_-]{16,}|gsk_[a-z0-9_-]{16,}|cfut_[a-z0-9_-]{16,})\b"),
     re.compile(r"(?i)(парол[ья]?|api[_ -]?key|token|secret|credential)\s*[:=]\s*\S+"),
 )
+QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
 
 
 def is_safe_knowledge_path(path):
@@ -41,9 +43,13 @@ def knowledge_raw_url(path):
 def fetch_knowledge_document(path, limit=80000):
     if not is_safe_knowledge_path(path):
         raise ValueError("not_allowed")
-    request = Request(knowledge_raw_url(path), headers={"User-Agent": "Mavis-Academy"})
-    with urlopen(request, timeout=12) as response:
-        content = response.read(limit).decode("utf-8")
+    local_path = (KNOWLEDGE_ROOT / path).resolve()
+    if local_path.is_relative_to(KNOWLEDGE_ROOT) and local_path.is_file():
+        content = local_path.read_text(encoding="utf-8")[:limit]
+    else:
+        request = Request(knowledge_raw_url(path), headers={"User-Agent": "Mavis-Academy"})
+        with urlopen(request, timeout=12) as response:
+            content = response.read(limit).decode("utf-8")
     for pattern in SENSITIVE_CONTENT_PATTERNS:
         content = pattern.sub("[скрыто]", content)
     return content
@@ -52,19 +58,18 @@ def fetch_knowledge_document(path, limit=80000):
 def knowledge_paths():
     if KNOWLEDGE_INDEX_CACHE["paths"] and time.time() - KNOWLEDGE_INDEX_CACHE["at"] < 600:
         return KNOWLEDGE_INDEX_CACHE["paths"]
-    request = Request(
-        REPO_API + "/git/trees/main?recursive=1",
-        headers={"User-Agent": "Mavis-Academy", "Accept": "application/vnd.github+json"},
-    )
-    with urlopen(request, timeout=12) as response:
-        tree = json.load(response).get("tree", [])
-    paths = [node.get("path", "") for node in tree if node.get("type") == "blob" and is_safe_knowledge_path(node.get("path", ""))]
+    paths = [
+        file.relative_to(KNOWLEDGE_ROOT).as_posix()
+        for prefix in ALLOWED_KNOWLEDGE_PREFIXES
+        for file in (KNOWLEDGE_ROOT / prefix).rglob("*.md")
+        if file.is_file() and is_safe_knowledge_path(file.relative_to(KNOWLEDGE_ROOT).as_posix())
+    ]
     KNOWLEDGE_INDEX_CACHE.update({"at": time.time(), "paths": paths})
     return paths
 
 
 def normalize_terms(value):
-    return [word for word in "".join(ch.lower() if ch.isalnum() else " " for ch in value).split() if len(word) > 2]
+    return [word for word in "".join(ch.lower() if ch.isalnum() else " " for ch in value).split() if len(word) > 2 and word not in QUERY_STOP_WORDS]
 
 
 def select_knowledge_sources(question):
