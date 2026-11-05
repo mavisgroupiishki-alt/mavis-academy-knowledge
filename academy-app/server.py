@@ -6,6 +6,10 @@ import json
 import os
 import re
 import time
+import base64
+import hashlib
+import hmac
+import secrets
 from urllib.parse import urlparse, parse_qs, quote
 
 ROOT = Path(__file__).resolve().parent
@@ -20,6 +24,8 @@ SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)(парол[ья]?|api[_ -]?key|token|secret|credential)\s*[:=]\s*\S+"),
 )
 QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
+ACCESS_ROLES = {"manager": "ACADEMY_MANAGER_PASS", "expert": "ACADEMY_EXPERT_PASS"}
+ACCESS_TOKEN_TTL = 12 * 60 * 60
 
 
 def is_safe_knowledge_path(path):
@@ -97,6 +103,51 @@ def select_knowledge_sources(question):
             continue
     return excerpts
 
+
+def _b64(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _unb64(value):
+    return base64.urlsafe_b64decode((value + "=" * (-len(value) % 4)).encode("ascii"))
+
+
+def access_secret():
+    # A missing secret fails closed instead of turning the browser into an auth authority.
+    return os.getenv("ACADEMY_SESSION_SECRET", "").encode("utf-8")
+
+
+def issue_access_token(role):
+    secret = access_secret()
+    if not secret:
+        raise ValueError("access_not_configured")
+    payload = json.dumps({"role": role, "exp": int(time.time()) + ACCESS_TOKEN_TTL, "nonce": secrets.token_urlsafe(12)}, separators=(",", ":")).encode("utf-8")
+    encoded = _b64(payload)
+    signature = _b64(hmac.new(secret, encoded.encode("ascii"), hashlib.sha256).digest())
+    return f"{encoded}.{signature}"
+
+
+def access_role_from_header(headers):
+    auth = headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    try:
+        token = auth[7:]
+        encoded, signature = token.split(".", 1)
+        secret = access_secret()
+        if not secret:
+            return None
+        expected = _b64(hmac.new(secret, encoded.encode("ascii"), hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected):
+            return None
+        payload = json.loads(_unb64(encoded))
+        role = payload.get("role")
+        if role not in ACCESS_ROLES or int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return role
+    except (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -111,6 +162,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
+        if self.path == "/api/access":
+            return self.create_access()
         if self.path == "/api/ai/ask":
             return self.ask_knowledge()
         if self.path != "/api/ai/grade":
@@ -146,6 +199,24 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"mode":"ai","passed":bool(inner.get("passed")),"feedback":str(inner.get("feedback", ""))[:1200]})
         except Exception:
             return self.respond_json({"mode":"unavailable","message":"AI grader temporarily unavailable"}, 503)
+
+    def create_access(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 1000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            role = str(payload.get("role", ""))
+            password = str(payload.get("password", ""))
+            env_name = ACCESS_ROLES.get(role)
+            expected = os.getenv(env_name, "") if env_name else ""
+            if not expected:
+                return self.respond_json({"error": "not_configured"}, 503)
+            if not hmac.compare_digest(password, expected):
+                return self.respond_json({"error": "invalid_credentials"}, 401)
+            return self.respond_json({"role": role, "token": issue_access_token(role), "expires_in": ACCESS_TOKEN_TTL})
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "invalid_request"}, 400)
 
     def ask_knowledge(self):
         stage = "request"
@@ -198,7 +269,10 @@ class Handler(SimpleHTTPRequestHandler):
             print(f"Knowledge assistant failed at {stage}: {type(exc).__name__}{status}", flush=True)
             return self.respond_json({"mode": "unavailable", "message": "Помощник временно недоступен. Попробуйте ещё раз позже."}, 503)
 
-    def get_knowledge_document(self):
+    def get_knowledge_document(self, require_access=False):
+        role = access_role_from_header(self.headers)
+        if require_access and not role:
+            return self.respond_json({"error": "auth_required"}, 401)
         query = parse_qs(urlparse(self.path).query)
         path = query.get("path", [""])[0]
         # Only read known instructional directories, never arbitrary URLs or local paths.
@@ -206,11 +280,13 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error":"not_allowed"}, 400)
         try:
             data = fetch_knowledge_document(path, 350000)
-            return self.respond_json({"path":path,"content":data})
+            return self.respond_json({"path":path,"content":data,"role":role})
         except Exception:
             return self.respond_json({"error":"unavailable"}, 503)
 
     def do_GET(self):
+        if self.path.startswith("/api/course/document?"):
+            return self.get_knowledge_document(require_access=True)
         if self.path.startswith("/api/knowledge/document?"):
             return self.get_knowledge_document()
         if self.path.startswith("/api/knowledge/status"):
