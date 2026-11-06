@@ -172,21 +172,22 @@ def access_role_from_header(headers):
 
 def results_store_config():
     url = os.getenv("ACADEMY_RESULTS_URL", "").rstrip("/")
-    key = os.getenv("ACADEMY_RESULTS_SERVICE_KEY", "")
-    return (url, key) if url and key else (None, None)
+    api_key = os.getenv("ACADEMY_RESULTS_SERVICE_KEY", "")
+    write_token = os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", "")
+    return (url, api_key, write_token) if url and api_key and write_token else (None, None, None)
 
 
 def results_request(method, path, payload=None):
-    url, key = results_store_config()
-    if not url or not key:
+    url, api_key, _ = results_store_config()
+    if not url or not api_key:
         raise ValueError("results_not_configured")
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
     request = Request(
         url + "/rest/v1/" + path.lstrip("/"),
         data=body,
         headers={
-            "apikey": key,
-            "Authorization": "Bearer " + key,
+            "apikey": api_key,
+            "Authorization": "Bearer " + api_key,
             "Content-Type": "application/json",
             "Prefer": "return=representation",
         },
@@ -335,8 +336,18 @@ class Handler(SimpleHTTPRequestHandler):
                 "passed": passed,
                 "result": safe_result,
             }
-            stored = results_request("POST", RESULTS_TABLE, row)
-            return self.respond_json({"saved": True, "attempt": stored[0] if stored else row})
+            _, _, write_token = results_store_config()
+            stored = results_request("POST", "rpc/academy_save_attempt", {
+                "p_access_token": write_token,
+                "p_candidate_name": row["candidate_name"],
+                "p_attempt_type": row["attempt_type"],
+                "p_attempt_number": row["attempt_number"],
+                "p_score": row["score"],
+                "p_max_score": row["max_score"],
+                "p_passed": row["passed"],
+                "p_result": row["result"],
+            })
+            return self.respond_json({"saved": True, "attempt": stored or row})
         except ValueError as exc:
             if str(exc) == "results_not_configured":
                 return self.respond_json({"error": "results_not_configured"}, 503)
@@ -348,10 +359,8 @@ class Handler(SimpleHTTPRequestHandler):
         if access_role_from_header(self.headers) != "leader":
             return self.respond_json({"error": "forbidden"}, 403)
         try:
-            rows = results_request(
-                "GET",
-                RESULTS_TABLE + "?select=candidate_name,attempt_type,attempt_number,score,max_score,passed,result,created_at&order=created_at.desc&limit=500",
-            )
+            _, _, write_token = results_store_config()
+            rows = results_request("POST", "rpc/academy_list_attempts", {"p_access_token": write_token})
             return self.respond_json({"results": rows})
         except ValueError as exc:
             if str(exc) == "results_not_configured":
