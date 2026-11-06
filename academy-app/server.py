@@ -32,6 +32,7 @@ ACCESS_ROLES = {
 }
 ACCESS_TOKEN_TTL = 12 * 60 * 60
 RESULTS_TABLE = "academy_web_attempts"
+CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
 DRIVE_AUDIO_FILES = {
@@ -246,6 +247,41 @@ def safe_attempt_result(result):
         safe["written"] = written
     return safe
 
+
+def read_trainee_curriculum():
+    if not CURRICULUM_STORE.is_file():
+        return None
+    try:
+        value = json.loads(CURRICULUM_STORE.read_text(encoding="utf-8"))
+        if isinstance(value, dict) and isinstance(value.get("courses"), list) and isinstance(value.get("days"), list):
+            return value
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def validate_trainee_curriculum(payload):
+    courses, days = payload.get("courses"), payload.get("days")
+    if not isinstance(courses, list) or not isinstance(days, list) or len(courses) > 80 or len(days) != 4:
+        raise ValueError("invalid_curriculum")
+    ids = set()
+    for course in courses:
+        if not isinstance(course, dict):
+            raise ValueError("invalid_curriculum")
+        course_id = str(course.get("id", ""))
+        if not re.fullmatch(r"[a-z0-9-]{2,80}", course_id) or course_id in ids:
+            raise ValueError("invalid_curriculum")
+        ids.add(course_id)
+        for key in ("title", "lead", "eyebrow", "content"):
+            if not isinstance(course.get(key, ""), str) or len(course.get(key, "")) > 20000:
+                raise ValueError("invalid_curriculum")
+    for day in days:
+        if not isinstance(day, dict) or not isinstance(day.get("courseIds"), list):
+            raise ValueError("invalid_curriculum")
+        if any(str(course_id) not in ids for course_id in day["courseIds"]):
+            raise ValueError("invalid_curriculum")
+    return {"courses": courses, "days": days}
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -262,6 +298,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/access":
             return self.create_access()
+        if self.path == "/api/academy/trainee-curriculum":
+            return self.save_trainee_curriculum()
         if self.path == "/api/ai/ask":
             return self.ask_knowledge()
         if self.path == "/api/academy/attempts":
@@ -368,6 +406,22 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "results_unavailable"}, 503)
         except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
             return self.respond_json({"error": "results_unavailable"}, 503)
+
+    def save_trainee_curriculum(self):
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 700000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            curriculum = validate_trainee_curriculum(json.loads(self.rfile.read(length)))
+            CURRICULUM_STORE.parent.mkdir(parents=True, exist_ok=True)
+            temporary = CURRICULUM_STORE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(curriculum, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(CURRICULUM_STORE)
+            return self.respond_json({"saved": True})
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "invalid_curriculum"}, 400)
 
     def create_access(self):
         try:
@@ -497,6 +551,11 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/academy/leader-results":
             return self.academy_leader_results()
+        if self.path == "/api/academy/trainee-curriculum":
+            if not access_role_from_header(self.headers):
+                return self.respond_json({"error": "auth_required"}, 401)
+            curriculum = read_trainee_curriculum()
+            return self.respond_json(curriculum or {})
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
