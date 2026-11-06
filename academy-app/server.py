@@ -31,6 +31,7 @@ ACCESS_ROLES = {
     "expert": "ACADEMY_EXPERT_PASS",
 }
 ACCESS_TOKEN_TTL = 12 * 60 * 60
+RESULTS_TABLE = "academy_web_attempts"
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
 DRIVE_AUDIO_FILES = {
@@ -142,7 +143,7 @@ def issue_access_token(role, display_name=""):
     return f"{encoded}.{signature}"
 
 
-def access_role_from_header(headers):
+def access_payload_from_header(headers):
     auth = headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return None
@@ -159,9 +160,90 @@ def access_role_from_header(headers):
         role = payload.get("role")
         if role not in ACCESS_ROLES or int(payload.get("exp", 0)) < int(time.time()):
             return None
-        return role
+        return {"role": role, "name": " ".join(str(payload.get("name", "")).split())[:80]}
     except (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
         return None
+
+
+def access_role_from_header(headers):
+    payload = access_payload_from_header(headers)
+    return payload["role"] if payload else None
+
+
+def results_store_config():
+    url = os.getenv("ACADEMY_RESULTS_URL", "").rstrip("/")
+    key = os.getenv("ACADEMY_RESULTS_SERVICE_KEY", "")
+    return (url, key) if url and key else (None, None)
+
+
+def results_request(method, path, payload=None):
+    url, key = results_store_config()
+    if not url or not key:
+        raise ValueError("results_not_configured")
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    request = Request(
+        url + "/rest/v1/" + path.lstrip("/"),
+        data=body,
+        headers={
+            "apikey": key,
+            "Authorization": "Bearer " + key,
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        method=method,
+    )
+    with urlopen(request, timeout=15) as response:
+        raw = response.read()
+    return json.loads(raw.decode("utf-8")) if raw else []
+
+
+def candidate_ai_review(answer):
+    """Optionally evaluate the written final answer. A missing AI credential never blocks saving."""
+    token = os.getenv("ACADEMY_AI_TOKEN", "")
+    if not token or len(answer) < 120:
+        return {"mode": "not_configured"}
+    try:
+        endpoint = os.getenv("ACADEMY_AI_URL", "https://api.openai.com/v1/chat/completions")
+        model = os.getenv("ACADEMY_AI_MODEL", "gpt-4.1-mini")
+        prompt = (
+            "Оцени ответ кандидата Mavis Group на русском языке. Проверь: диагностику задачи, пользу клиенту, "
+            "отсутствие необоснованных обещаний и конкретный следующий шаг с датой. "
+            "Верни только JSON: rating (целое 0-10), feedback (до 700 символов), risks (массив до 3 строк)."
+        )
+        body = json.dumps({"model": model, "temperature": 0.1, "response_format": {"type": "json_object"}, "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": answer[:3000]},
+        ]}).encode("utf-8")
+        request = Request(endpoint, data=body, headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"}, method="POST")
+        with urlopen(request, timeout=25) as response:
+            outer = json.load(response)
+        review = json.loads(outer["choices"][0]["message"]["content"])
+        return {
+            "mode": "ai",
+            "rating": max(0, min(10, int(review.get("rating", 0)))),
+            "feedback": str(review.get("feedback", ""))[:700],
+            "risks": [str(item)[:180] for item in review.get("risks", [])[:3]],
+        }
+    except (URLError, HTTPError, TimeoutError, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return {"mode": "unavailable"}
+
+
+def safe_attempt_result(result):
+    answers = result.get("answers", {})
+    if not isinstance(answers, (dict, list)):
+        answers = {}
+    encoded = json.dumps(answers, ensure_ascii=False)
+    if len(encoded.encode("utf-8")) > 6000:
+        raise ValueError("invalid_result")
+    safe = {
+        "course_id": str(result.get("course_id", ""))[:80],
+        "version": min(100, max(1, int(result.get("version", 1) or 1))),
+        "answers": answers,
+    }
+    written = str(result.get("written", ""))[:3000]
+    if written:
+        safe["written"] = written
+    return safe
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -181,6 +263,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.create_access()
         if self.path == "/api/ai/ask":
             return self.ask_knowledge()
+        if self.path == "/api/academy/attempts":
+            return self.save_academy_attempt()
         if self.path != "/api/ai/grade":
             return self.respond_json({"error": "not_found"}, 404)
         try:
@@ -214,6 +298,67 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"mode":"ai","passed":bool(inner.get("passed")),"feedback":str(inner.get("feedback", ""))[:1200]})
         except Exception:
             return self.respond_json({"mode":"unavailable","message":"AI grader temporarily unavailable"}, 503)
+
+    def save_academy_attempt(self):
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] != "trainee":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 16000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            attempt_type = str(payload.get("attempt_type", ""))[:80]
+            attempt_number = int(payload.get("attempt_number", 1))
+            score = int(payload.get("score", -1))
+            max_score = int(payload.get("max_score", 0))
+            passed = bool(payload.get("passed"))
+            result = payload.get("result", {})
+            if (
+                attempt_type not in {"course-practice", "final-exam"}
+                or not 1 <= attempt_number <= 100
+                or not 0 <= score <= 100
+                or not 1 <= max_score <= 100
+                or score > max_score
+                or not isinstance(result, dict)
+            ):
+                return self.respond_json({"error": "invalid_attempt"}, 400)
+            safe_result = safe_attempt_result(result)
+            if attempt_type == "final-exam":
+                safe_result["ai_review"] = candidate_ai_review(safe_result.get("written", ""))
+            row = {
+                "candidate_name": access["name"],
+                "attempt_type": attempt_type,
+                "attempt_number": attempt_number,
+                "score": score,
+                "max_score": max_score,
+                "passed": passed,
+                "result": safe_result,
+            }
+            stored = results_request("POST", RESULTS_TABLE, row)
+            return self.respond_json({"saved": True, "attempt": stored[0] if stored else row})
+        except ValueError as exc:
+            if str(exc) == "results_not_configured":
+                return self.respond_json({"error": "results_not_configured"}, 503)
+            return self.respond_json({"error": "invalid_attempt"}, 400)
+        except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
+            return self.respond_json({"error": "results_unavailable"}, 503)
+
+    def academy_leader_results(self):
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            rows = results_request(
+                "GET",
+                RESULTS_TABLE + "?select=candidate_name,attempt_type,attempt_number,score,max_score,passed,result,created_at&order=created_at.desc&limit=500",
+            )
+            return self.respond_json({"results": rows})
+        except ValueError as exc:
+            if str(exc) == "results_not_configured":
+                return self.respond_json({"error": "results_not_configured"}, 503)
+            return self.respond_json({"error": "results_unavailable"}, 503)
+        except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
+            return self.respond_json({"error": "results_unavailable"}, 503)
 
     def create_access(self):
         try:
@@ -326,6 +471,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "audio_unavailable"}, 503)
 
     def do_GET(self):
+        if self.path == "/api/academy/leader-results":
+            return self.academy_leader_results()
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
