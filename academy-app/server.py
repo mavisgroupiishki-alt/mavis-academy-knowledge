@@ -39,6 +39,7 @@ ACCESS_ROLES = {
 ACCESS_TOKEN_TTL = 12 * 60 * 60
 RESULTS_TABLE = "academy_web_attempts"
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
+DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
 FALLBACK_RESULTS_STORE = ROOT / "data" / "academy-local-results.json"
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
@@ -322,6 +323,24 @@ def read_trainee_curriculum():
     return None
 
 
+def read_document_overrides():
+    if not DOCUMENT_OVERRIDES_STORE.is_file():
+        return {}
+    try:
+        value = json.loads(DOCUMENT_OVERRIDES_STORE.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def validate_document_override(payload):
+    path = str(payload.get("path", ""))
+    content = str(payload.get("content", ""))
+    if not is_safe_knowledge_path(path) or not content.strip() or len(content) > 350000 or not is_safe_rich_text(content):
+        raise ValueError("invalid_document_override")
+    return path, content
+
+
 def validate_trainee_curriculum(payload):
     courses, days = payload.get("courses"), payload.get("days")
     if not isinstance(courses, list) or not isinstance(days, list) or len(courses) > 80 or len(days) != 4:
@@ -364,6 +383,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.create_access()
         if self.path == "/api/academy/trainee-curriculum":
             return self.save_trainee_curriculum()
+        if self.path == "/api/academy/document-overrides":
+            return self.save_document_override()
         if self.path == "/api/ai/ask":
             return self.ask_knowledge()
         if self.path == "/api/academy/attempts":
@@ -491,6 +512,24 @@ class Handler(SimpleHTTPRequestHandler):
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "invalid_curriculum"}, 400)
 
+    def save_document_override(self):
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 400000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            path, content = validate_document_override(json.loads(self.rfile.read(length)))
+            overrides = read_document_overrides()
+            overrides[path] = content
+            DOCUMENT_OVERRIDES_STORE.parent.mkdir(parents=True, exist_ok=True)
+            temporary = DOCUMENT_OVERRIDES_STORE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(overrides, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(DOCUMENT_OVERRIDES_STORE)
+            return self.respond_json({"saved": True, "path": path})
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "invalid_document_override"}, 400)
+
     def create_access(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -602,8 +641,11 @@ class Handler(SimpleHTTPRequestHandler):
         if not is_safe_knowledge_path(path):
             return self.respond_json({"error":"not_allowed"}, 400)
         try:
+            override = read_document_overrides().get(path)
+            if isinstance(override, str):
+                return self.respond_json({"path": path, "content": override, "format": "html", "role": role})
             data = fetch_knowledge_document(path, 350000)
-            return self.respond_json({"path":path,"content":data,"role":role})
+            return self.respond_json({"path":path,"content":data,"format":"markdown","role":role})
         except Exception:
             return self.respond_json({"error":"unavailable"}, 503)
 
@@ -638,6 +680,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond_json({"error": "auth_required"}, 401)
             curriculum = read_trainee_curriculum()
             return self.respond_json(curriculum or {})
+        if self.path == "/api/academy/document-overrides":
+            if access_role_from_header(self.headers) != "leader":
+                return self.respond_json({"error": "forbidden"}, 403)
+            return self.respond_json({"paths": list(read_document_overrides().keys())})
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
