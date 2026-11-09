@@ -17,7 +17,7 @@ KNOWLEDGE_ROOT = ROOT.parent.resolve()
 REPO_API = "https://api.github.com/repos/mavisgroupiishki-alt/mavis-academy-knowledge"
 CACHE = {"at": 0, "data": None}
 KNOWLEDGE_INDEX_CACHE = {"at": 0, "paths": []}
-ALLOWED_KNOWLEDGE_PREFIXES = ("02 PRODUCTS/", "03 SALES/", "04 EXPERT/", "06 BITRIX24/", "09 SOP/")
+ALLOWED_KNOWLEDGE_PREFIXES = ("02 PRODUCTS/", "03 SALES/", "04 EXPERT/", "06 BITRIX24/", "07 AI & AUTOMATION/", "09 SOP/")
 UNSAFE_KNOWLEDGE_TERMS = ("парол", "доступ", "ключ", "token", "secret", "credential")
 SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)\b(sk-[a-z0-9_-]{16,}|gsk_[a-z0-9_-]{16,}|cfut_[a-z0-9_-]{16,})\b"),
