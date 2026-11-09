@@ -1,0 +1,16 @@
+name: Keep Mavis Academy awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Request the health endpoint
+        run: curl --fail --silent --show-error --retry 2 --max-time 25 https://mavis-academy.onrender.com/healthz

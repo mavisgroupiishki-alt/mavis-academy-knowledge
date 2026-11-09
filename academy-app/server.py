@@ -684,6 +684,11 @@ class Handler(SimpleHTTPRequestHandler):
             if access_role_from_header(self.headers) != "leader":
                 return self.respond_json({"error": "forbidden"}, 403)
             return self.respond_json({"paths": list(read_document_overrides().keys())})
+        if self.path == "/api/academy/knowledge-catalog":
+            role = access_role_from_header(self.headers)
+            if role not in {"leader", "manager", "expert"}:
+                return self.respond_json({"error": "forbidden"}, 403)
+            return self.respond_json({"paths": sorted(knowledge_paths())})
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
