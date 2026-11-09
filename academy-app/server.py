@@ -40,6 +40,7 @@ ACCESS_TOKEN_TTL = 12 * 60 * 60
 RESULTS_TABLE = "academy_web_attempts"
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
 DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
+LIBRARY_CATALOG_STORE = ROOT / "data" / "library-catalog.json"
 FALLBACK_RESULTS_STORE = ROOT / "data" / "academy-local-results.json"
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
@@ -333,6 +334,56 @@ def read_document_overrides():
         return {}
 
 
+def read_library_catalog():
+    default = {"hidden": [], "overrides": {}, "custom": []}
+    if not LIBRARY_CATALOG_STORE.is_file():
+        return default
+    try:
+        value = json.loads(LIBRARY_CATALOG_STORE.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            return default
+        return {
+            "hidden": value.get("hidden", []) if isinstance(value.get("hidden"), list) else [],
+            "overrides": value.get("overrides", {}) if isinstance(value.get("overrides"), dict) else {},
+            "custom": value.get("custom", []) if isinstance(value.get("custom"), list) else [],
+        }
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def validate_library_catalog(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("invalid_library_catalog")
+    source_paths = set(knowledge_paths())
+    hidden = payload.get("hidden", [])
+    overrides = payload.get("overrides", {})
+    custom = payload.get("custom", [])
+    if not isinstance(hidden, list) or not isinstance(overrides, dict) or not isinstance(custom, list):
+        raise ValueError("invalid_library_catalog")
+    hidden = [str(item) for item in hidden if re.fullmatch(r"[a-z0-9-]{1,80}", str(item))][:80]
+    cleaned_overrides = {}
+    for key, value in overrides.items():
+        if not re.fullmatch(r"[a-z0-9-]{1,80}", str(key)) or not isinstance(value, dict):
+            continue
+        title, eyebrow, lead = (str(value.get(name, "")).strip() for name in ("title", "eyebrow", "lead"))
+        if title and len(title) <= 140 and len(eyebrow) <= 100 and len(lead) <= 500:
+            cleaned_overrides[str(key)] = {"title": title, "eyebrow": eyebrow, "lead": lead}
+    cleaned_custom = []
+    for item in custom[:80]:
+        if not isinstance(item, dict):
+            continue
+        identifier = str(item.get("id", ""))
+        title, eyebrow, lead = (str(item.get(name, "")).strip() for name in ("title", "eyebrow", "lead"))
+        paths = item.get("sources", [])
+        if (not re.fullmatch(r"library-custom-[a-z0-9-]{1,80}", identifier) or not title or len(title) > 140
+                or len(eyebrow) > 100 or len(lead) > 500 or not isinstance(paths, list)):
+            continue
+        selected = [str(path) for path in paths if str(path) in source_paths][:25]
+        if selected:
+            cleaned_custom.append({"id": identifier, "title": title, "eyebrow": eyebrow, "lead": lead, "sources": selected})
+    return {"hidden": sorted(set(hidden)), "overrides": cleaned_overrides, "custom": cleaned_custom}
+
+
 def validate_document_override(payload):
     path = str(payload.get("path", ""))
     content = str(payload.get("content", ""))
@@ -385,6 +436,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.save_trainee_curriculum()
         if self.path == "/api/academy/document-overrides":
             return self.save_document_override()
+        if self.path == "/api/academy/library-catalog":
+            return self.save_library_catalog()
         if self.path == "/api/ai/ask":
             return self.ask_knowledge()
         if self.path == "/api/academy/attempts":
@@ -529,6 +582,22 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"saved": True, "path": path})
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "invalid_document_override"}, 400)
+
+    def save_library_catalog(self):
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 120000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            catalog = validate_library_catalog(json.loads(self.rfile.read(length)))
+            LIBRARY_CATALOG_STORE.parent.mkdir(parents=True, exist_ok=True)
+            temporary = LIBRARY_CATALOG_STORE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(LIBRARY_CATALOG_STORE)
+            return self.respond_json({"saved": True, "catalog": catalog})
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "invalid_library_catalog"}, 400)
 
     def create_access(self):
         try:
@@ -684,11 +753,11 @@ class Handler(SimpleHTTPRequestHandler):
             if access_role_from_header(self.headers) != "leader":
                 return self.respond_json({"error": "forbidden"}, 403)
             return self.respond_json({"paths": list(read_document_overrides().keys())})
-        if self.path == "/api/academy/knowledge-catalog":
+        if self.path == "/api/academy/library-catalog":
             role = access_role_from_header(self.headers)
             if role not in {"leader", "manager", "expert"}:
                 return self.respond_json({"error": "forbidden"}, 403)
-            return self.respond_json({"paths": sorted(knowledge_paths())})
+            return self.respond_json({"catalog": read_library_catalog(), "paths": sorted(knowledge_paths())})
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
