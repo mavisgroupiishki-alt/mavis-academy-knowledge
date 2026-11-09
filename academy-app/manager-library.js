@@ -361,7 +361,8 @@
   function catalog() {
     const allCourses = coursesFor();
     const query=state.catalogQuery.trim().toLowerCase(), matched=new Set(state.catalogMatches||[]);
-    const list = !query ? allCourses : allCourses.filter(course=>`${course.title} ${course.eyebrow} ${course.lead}`.toLowerCase().includes(query)||course.sources.some(path=>matched.has(path)));
+    const directMatches = !query ? [] : allCourses.filter(course=>`${course.title} ${course.eyebrow} ${course.lead} ${course.sources.map(sourceTitle).join(' ')}`.toLowerCase().includes(query));
+    const list = !query ? allCourses : directMatches.length ? directMatches : allCourses.filter(course=>course.sources.some(path=>matched.has(path)));
     const trainee=(access?.role||state.role)==='trainee';
     const day = traineeDays[state.traineeDay];
     const dayCourses = trainee ? list.filter(course=>day.courseIds.includes(course.id)) : list;
