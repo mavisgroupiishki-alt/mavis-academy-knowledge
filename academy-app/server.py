@@ -33,6 +33,7 @@ ACCESS_ROLES = {
 ACCESS_TOKEN_TTL = 12 * 60 * 60
 RESULTS_TABLE = "academy_web_attempts"
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
+FALLBACK_RESULTS_STORE = ROOT / "data" / "academy-local-results.json"
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
 DRIVE_AUDIO_FILES = {
@@ -199,6 +200,46 @@ def results_request(method, path, payload=None):
     return json.loads(raw.decode("utf-8")) if raw else []
 
 
+def read_fallback_results():
+    if not FALLBACK_RESULTS_STORE.is_file():
+        return {"trainees": [], "results": []}
+    try:
+        value = json.loads(FALLBACK_RESULTS_STORE.read_text(encoding="utf-8"))
+        if isinstance(value, dict) and isinstance(value.get("trainees"), list) and isinstance(value.get("results"), list):
+            return value
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {"trainees": [], "results": []}
+
+
+def write_fallback_results(value):
+    FALLBACK_RESULTS_STORE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = FALLBACK_RESULTS_STORE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(FALLBACK_RESULTS_STORE)
+
+
+def register_fallback_trainee(candidate_name):
+    value = read_fallback_results()
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    existing = next((item for item in value["trainees"] if item.get("candidate_name") == candidate_name), None)
+    if existing:
+        existing["last_seen_at"] = now
+    else:
+        value["trainees"].append({"candidate_name": candidate_name, "first_seen_at": now, "last_seen_at": now})
+    write_fallback_results(value)
+
+
+def save_fallback_attempt(row):
+    value = read_fallback_results()
+    register_fallback_trainee(row["candidate_name"])
+    value = read_fallback_results()
+    stored = {**row, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    value["results"].insert(0, stored)
+    write_fallback_results(value)
+    return stored
+
+
 def candidate_ai_review(answer):
     """Optionally evaluate the written final answer. A missing AI credential never blocks saving."""
     token = os.getenv("ACADEMY_AI_TOKEN", "")
@@ -248,6 +289,19 @@ def safe_attempt_result(result):
     return safe
 
 
+def is_safe_rich_text(value):
+    """Reject executable markup from the leader's visual editor.
+
+    The browser editor only produces a small formatting subset.  This second
+    server-side check makes stored lessons safe even if a request is forged.
+    """
+    forbidden = re.compile(
+        r"(?is)<\s*/?\s*(script|style|iframe|object|embed|svg|math|link|meta|base)\b"
+        r"|\bon[a-z]+\s*=|javascript\s*:|data\s*:\s*text/html|expression\s*\(|url\s*\("
+    )
+    return not forbidden.search(value or "")
+
+
 def read_trainee_curriculum():
     if not CURRICULUM_STORE.is_file():
         return None
@@ -275,6 +329,8 @@ def validate_trainee_curriculum(payload):
         for key in ("title", "lead", "eyebrow", "content"):
             if not isinstance(course.get(key, ""), str) or len(course.get(key, "")) > 20000:
                 raise ValueError("invalid_curriculum")
+        if not is_safe_rich_text(course.get("content", "")):
+            raise ValueError("invalid_curriculum")
     for day in days:
         if not isinstance(day, dict) or not isinstance(day.get("courseIds"), list):
             raise ValueError("invalid_curriculum")
@@ -375,17 +431,20 @@ class Handler(SimpleHTTPRequestHandler):
                 "result": safe_result,
             }
             _, _, write_token = results_store_config()
-            stored = results_request("POST", "rpc/academy_save_attempt", {
-                "p_access_token": write_token,
-                "p_candidate_name": row["candidate_name"],
-                "p_attempt_type": row["attempt_type"],
-                "p_attempt_number": row["attempt_number"],
-                "p_score": row["score"],
-                "p_max_score": row["max_score"],
-                "p_passed": row["passed"],
-                "p_result": row["result"],
-            })
-            return self.respond_json({"saved": True, "attempt": stored or row})
+            try:
+                stored = results_request("POST", "rpc/academy_save_attempt", {
+                    "p_access_token": write_token,
+                    "p_candidate_name": row["candidate_name"],
+                    "p_attempt_type": row["attempt_type"],
+                    "p_attempt_number": row["attempt_number"],
+                    "p_score": row["score"],
+                    "p_max_score": row["max_score"],
+                    "p_passed": row["passed"],
+                    "p_result": row["result"],
+                })
+                return self.respond_json({"saved": True, "attempt": stored or row})
+            except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
+                return self.respond_json({"saved": True, "attempt": save_fallback_attempt(row), "storage": "server_fallback"})
         except ValueError as exc:
             if str(exc) == "results_not_configured":
                 return self.respond_json({"error": "results_not_configured"}, 503)
@@ -399,13 +458,14 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             _, _, write_token = results_store_config()
             rows = results_request("POST", "rpc/academy_list_attempts", {"p_access_token": write_token})
-            return self.respond_json({"results": rows})
+            trainees = results_request("POST", "rpc/academy_list_trainees", {"p_access_token": write_token})
+            return self.respond_json({"results": rows, "trainees": trainees})
         except ValueError as exc:
-            if str(exc) == "results_not_configured":
-                return self.respond_json({"error": "results_not_configured"}, 503)
-            return self.respond_json({"error": "results_unavailable"}, 503)
+            fallback = read_fallback_results()
+            return self.respond_json({"results": fallback["results"], "trainees": fallback["trainees"], "storage": "server_fallback"})
         except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-            return self.respond_json({"error": "results_unavailable"}, 503)
+            fallback = read_fallback_results()
+            return self.respond_json({"results": fallback["results"], "trainees": fallback["trainees"], "storage": "server_fallback"})
 
     def save_trainee_curriculum(self):
         if access_role_from_header(self.headers) != "leader":
@@ -440,6 +500,20 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond_json({"error": "not_configured"}, 503)
             if not hmac.compare_digest(password, expected):
                 return self.respond_json({"error": "invalid_credentials"}, 401)
+            # A trainee appears in the leader list when they enter Academy,
+            # rather than only after completing their first assessment.
+            if role == "trainee":
+                register_fallback_trainee(display_name)
+                try:
+                    _, _, write_token = results_store_config()
+                    results_request("POST", "rpc/academy_register_trainee", {
+                        "p_access_token": write_token,
+                        "p_candidate_name": display_name,
+                    })
+                except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
+                    # Authentication must remain available if a reporting
+                    # provider has a temporary outage.
+                    pass
             return self.respond_json({"role": role, "display_name": display_name, "token": issue_access_token(role, display_name), "expires_in": ACCESS_TOKEN_TTL})
         except (ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "invalid_request"}, 400)
