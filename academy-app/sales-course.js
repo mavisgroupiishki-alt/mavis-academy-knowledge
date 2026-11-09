@@ -283,18 +283,32 @@ function renderEducationDocument(raw,title){
     return `<details class="edu-topic" ${i<6?'open':''}><summary><span class="edu-topic-name">${E(label||'Дополнительные сведения')}</span><span class="edu-toggle">Развернуть / свернуть</span></summary><div class="edu-topic-content">${renderEducationBody(r.body)}</div></details>`;
   }).join('')+'</article>';
 }
+const LEGACY_SOURCE_COURSE={
+  '02 PRODUCTS/Паспорт продукта — 0101 СПК.md':'spk',
+  '03 SALES/Конспект менеджера.md':'sales-reference',
+  '02 PRODUCTS/Паспорт продукта — 0104.07 Аттестация СТ.md':'attestation',
+  '02 PRODUCTS/Паспорт продукта — 0104.06 Аттестация ГС.md':'attestation',
+  '02 PRODUCTS/Паспорт продукта — 0301 Сертификат ISO 9001.md':'iso-suot',
+  '02 PRODUCTS/Паспорт продукта — 0302 Периодика ISO 9001.md':'iso-suot',
+  '02 PRODUCTS/Паспорт продукта — 0303 Сертификат СУОТ 45001.md':'iso-suot',
+  '02 PRODUCTS/Паспорт продукта — 0304 Периодика СУОТ 45001.md':'iso-suot',
+  '03 SALES/Скрипты — Дожимы и возражения.md':'sales',
+  '03 SALES/Скрипты — Возражения.docx.md':'sales',
+  '03 SALES/Инструкция — договор.md':'sales'
+};
 async function showSource(i){
-  let m=mod(),node=document.getElementById('library-body');
+  let m=mod(),node=document.getElementById('library-body'),path=m.sources[i],course=LEGACY_SOURCE_COURSE[path];
+  let access=null;try{access=JSON.parse(sessionStorage.getItem('mavis-academy-access-v1')||'null')}catch(_){}
+  if(!course||!access?.token){node.textContent='Полный рабочий источник доступен после входа сотрудника в Academy.';return;}
   node.textContent='Загружаю материал…';
-  let path=m.sources[i];
   try{
-    let res=await fetch('/api/knowledge/document?path='+encodeURIComponent(path));
+    let res=await fetch('/api/course/document?course='+encodeURIComponent(course)+'&path='+encodeURIComponent(path),{headers:{Authorization:'Bearer '+access.token}});
     if(!res.ok) throw new Error('network');
     let data=await res.json();
     if(!data.content)throw Error('empty');
     node.innerHTML=renderEducationDocument(data.content,path.split('/').pop().replace('.md',''));
   }catch{
-    node.textContent='Не удалось загрузить материал. Проверь подключение к интернету и попробуй ещё раз.';
+    node.textContent='Не удалось загрузить материал. Проверьте вход сотрудника и повторите попытку.';
   }
 }
 window.showSource=showSource;

@@ -17,17 +17,14 @@ KNOWLEDGE_ROOT = ROOT.parent.resolve()
 REPO_API = "https://api.github.com/repos/mavisgroupiishki-alt/mavis-academy-knowledge"
 CACHE = {"at": 0, "data": None}
 KNOWLEDGE_INDEX_CACHE = {"at": 0, "paths": []}
+KNOWLEDGE_TEXT_CACHE = {"at": 0, "texts": {}}
+COURSE_ACCESS_FILE = ROOT / "course-access.json"
+MAX_KNOWLEDGE_DOCUMENT_BYTES = 1_500_000
 ALLOWED_KNOWLEDGE_PREFIXES = ("02 PRODUCTS/", "03 SALES/", "04 EXPERT/", "06 BITRIX24/", "07 AI & AUTOMATION/", "09 SOP/")
 UNSAFE_KNOWLEDGE_TERMS = ("парол", "доступ", "ключ", "token", "secret", "credential")
 SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)\b(sk-[a-z0-9_-]{16,}|gsk_[a-z0-9_-]{16,}|cfut_[a-z0-9_-]{16,})\b"),
     re.compile(r"(?i)(парол[ья]?|api[_ -]?key|token|secret|credential)\s*[:=]\s*\S+"),
-)
-# Academy is a learning surface, not a contact directory.  Source documents can
-# contain operational contacts, so strip them before any document reaches the browser.
-PERSONAL_CONTACT_PATTERNS = (
-    re.compile(r"(?i)(?:\+?375)[\s().-]*\d{2}[\s().-]*\d{3}[\s().-]*\d{2}[\s().-]*\d{2}"),
-    re.compile(r"(?i)\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"),
 )
 QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
 ACCESS_ROLES = {
@@ -79,20 +76,28 @@ def knowledge_raw_url(path):
     )
 
 
-def fetch_knowledge_document(path, limit=80000):
+def fetch_knowledge_document(path, limit=None):
+    """Read a complete approved source unless an explicit bounded excerpt is requested.
+
+    The Academy uses this function for both the reader and the catalogue search.
+    Never silently cut a teaching document: a requested limit is used only by AI
+    excerpts, and the reader/search call it with ``None``.
+    """
     if not is_safe_knowledge_path(path):
         raise ValueError("not_allowed")
     local_path = (KNOWLEDGE_ROOT / path).resolve()
     if local_path.is_relative_to(KNOWLEDGE_ROOT) and local_path.is_file():
-        content = local_path.read_text(encoding="utf-8")[:limit]
+        content = local_path.read_text(encoding="utf-8")
     else:
         request = Request(knowledge_raw_url(path), headers={"User-Agent": "Mavis-Academy"})
         with urlopen(request, timeout=12) as response:
-            content = response.read(limit).decode("utf-8")
+            content = response.read(MAX_KNOWLEDGE_DOCUMENT_BYTES + 1).decode("utf-8")
+    if len(content.encode("utf-8")) > MAX_KNOWLEDGE_DOCUMENT_BYTES:
+        raise ValueError("document_too_large")
+    if limit is not None:
+        content = content[:limit]
     for pattern in SENSITIVE_CONTENT_PATTERNS:
         content = pattern.sub("[скрыто]", content)
-    for pattern in PERSONAL_CONTACT_PATTERNS:
-        content = pattern.sub("[контакт скрыт]", content)
     return content
 
 
@@ -113,10 +118,11 @@ def normalize_terms(value):
     return [word for word in "".join(ch.lower() if ch.isalnum() else " " for ch in value).split() if len(word) > 2 and word not in QUERY_STOP_WORDS]
 
 
-def select_knowledge_sources(question):
+def select_knowledge_sources(question, allowed_paths=None):
     terms = normalize_terms(question)
     ranked = []
-    for path in knowledge_paths():
+    candidate_paths = allowed_paths if allowed_paths is not None else knowledge_paths()
+    for path in candidate_paths:
         haystack = path.lower()
         score = sum(1 for term in terms if term in haystack)
         if score:
@@ -139,14 +145,19 @@ def select_knowledge_sources(question):
     return excerpts
 
 
-def search_knowledge_paths(query):
+def search_knowledge_paths(query, allowed_paths=None):
     terms = normalize_terms(query)
     if not terms:
         return []
     matches = []
-    for path in knowledge_paths():
+    searchable_paths = sorted(set(allowed_paths if allowed_paths is not None else knowledge_paths()))
+    for path in searchable_paths:
         try:
-            haystack = (path + "\n" + fetch_knowledge_document(path, 80000)).lower()
+            cached = KNOWLEDGE_TEXT_CACHE["texts"].get(path)
+            if cached is None:
+                cached = fetch_knowledge_document(path)
+                KNOWLEDGE_TEXT_CACHE["texts"][path] = cached
+            haystack = (path + "\n" + cached).lower()
         except (URLError, HTTPError, TimeoutError, ValueError, UnicodeDecodeError):
             continue
         if all(term in haystack for term in terms):
@@ -495,15 +506,16 @@ def validate_library_catalog(payload):
                 or len(eyebrow) > 100 or len(lead) > 500 or not isinstance(paths, list)):
             continue
         selected = [str(path) for path in paths if str(path) in source_paths][:25]
+        roles = [role for role in item.get("roles", ["leader"]) if role in {"manager", "expert", "leader"}]
         if selected:
-            cleaned_custom.append({"id": identifier, "title": title, "eyebrow": eyebrow, "lead": lead, "sources": selected})
+            cleaned_custom.append({"id": identifier, "title": title, "eyebrow": eyebrow, "lead": lead, "sources": selected, "roles": sorted(set(roles or ["leader"]))})
     return {"hidden": sorted(set(hidden)), "overrides": cleaned_overrides, "custom": cleaned_custom}
 
 
 def validate_document_override(payload):
     path = str(payload.get("path", ""))
     content = str(payload.get("content", ""))
-    if not is_safe_knowledge_path(path) or not content.strip() or len(content) > 350000 or not is_safe_rich_text(content):
+    if not is_safe_knowledge_path(path) or not content.strip() or len(content) > MAX_KNOWLEDGE_DOCUMENT_BYTES or not is_safe_rich_text(content):
         raise ValueError("invalid_document_override")
     return path, content
 
@@ -531,6 +543,82 @@ def validate_trainee_curriculum(payload):
         if any(str(course_id) not in ids for course_id in day["courseIds"]):
             raise ValueError("invalid_curriculum")
     return {"courses": courses, "days": days}
+
+
+def course_access_manifest():
+    """Return the server-owned course-to-source and role map.
+
+    Client-side tiles are presentation only.  This manifest is the permission
+    boundary for a document request, so changing a tile in DevTools cannot
+    expose a different source.
+    """
+    try:
+        raw = json.loads(COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    manifest = {}
+    for course_id, item in raw.items():
+        if not re.fullmatch(r"[a-z0-9-]{2,80}", str(course_id)) or not isinstance(item, dict):
+            continue
+        roles = [role for role in item.get("r", []) if role in ACCESS_ROLES]
+        paths = [path for path in item.get("p", []) if isinstance(path, str) and is_safe_knowledge_path(path)]
+        if roles and (paths or item.get("all") is True):
+            manifest[str(course_id)] = {"roles": set(roles), "paths": set(paths), "all": item.get("all") is True}
+    return manifest
+
+
+def custom_course_access(course_id):
+    """Resolve leader-created catalogue tiles from persistent state.
+
+    They are limited to known source paths by ``validate_library_catalog``.
+    A custom tile without an explicit role is available to staff roles only,
+    which mirrors the catalogue UI and never grants trainee access.
+    """
+    try:
+        catalog = read_library_catalog()
+    except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    for item in catalog.get("custom", []):
+        if isinstance(item, dict) and item.get("id") == course_id:
+            paths = {path for path in item.get("sources", []) if is_safe_knowledge_path(path)}
+            roles = {role for role in item.get("roles", ["leader"]) if role in {"manager", "expert", "leader"}}
+            return {"roles": roles or {"leader"}, "paths": paths, "all": False}
+    return None
+
+
+def document_access_for(role, course_id, path):
+    if role not in ACCESS_ROLES or not is_safe_knowledge_path(path):
+        return False
+    access = course_access_manifest().get(course_id) or custom_course_access(course_id)
+    if not access or role not in access["roles"]:
+        return False
+    return bool(access["all"] or path in access["paths"])
+
+
+def accessible_paths_for(role):
+    """Return only paths connected to a tile that this role may open."""
+    if role not in ACCESS_ROLES:
+        return set()
+    paths = set()
+    for access in course_access_manifest().values():
+        if role not in access["roles"]:
+            continue
+        if access["all"]:
+            paths.update(knowledge_paths())
+        else:
+            paths.update(access["paths"])
+    try:
+        catalog = read_library_catalog()
+    except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+        catalog = {"custom": []}
+    if role in {"manager", "expert", "leader"}:
+        for item in catalog.get("custom", []):
+            custom_roles = set(item.get("roles", ["leader"])) if isinstance(item, dict) else set()
+            if isinstance(item, dict) and role in custom_roles:
+                paths.update(path for path in item.get("sources", []) if is_safe_knowledge_path(path))
+    return paths
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -688,7 +776,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "forbidden"}, 403)
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length < 2 or length > 400000:
+            if length < 2 or length > MAX_KNOWLEDGE_DOCUMENT_BYTES + 100_000:
                 return self.respond_json({"error": "invalid_size"}, 413)
             path, content = validate_document_override(json.loads(self.rfile.read(length)))
             overrides = read_document_overrides()
@@ -759,8 +847,11 @@ class Handler(SimpleHTTPRequestHandler):
     def ask_knowledge(self):
         stage = "request"
         try:
-            if not access_role_from_header(self.headers):
+            role = access_role_from_header(self.headers)
+            if not role:
                 return self.respond_json({"error": "auth_required", "message": "Войдите в Academy, чтобы задать вопрос помощнику."}, 401)
+            if role not in {"manager", "expert", "leader"}:
+                return self.respond_json({"error": "forbidden", "message": "Помощник доступен в рабочей базе после входа сотрудника."}, 403)
             length = int(self.headers.get("Content-Length", "0"))
             if length < 2 or length > 9000:
                 return self.respond_json({"error": "invalid_size"}, 413)
@@ -778,7 +869,7 @@ class Handler(SimpleHTTPRequestHandler):
                     if text:
                         history.append({"role": item["role"], "text": text})
             stage = "knowledge_source"
-            sources = select_knowledge_sources(question)
+            sources = select_knowledge_sources(question, accessible_paths_for(role))
             if not sources:
                 return self.respond_json({"mode": "unavailable", "message": "Не удалось получить материалы базы знаний"}, 503)
             token = os.getenv("ACADEMY_AI_TOKEN", "")
@@ -822,15 +913,18 @@ class Handler(SimpleHTTPRequestHandler):
             print(f"Knowledge assistant failed at {stage}: {type(exc).__name__}{status}", flush=True)
             return self.respond_json({"mode": "unavailable", "message": "Помощник временно недоступен. Попробуйте ещё раз позже."}, 503)
 
-    def get_knowledge_document(self, require_access=False):
+    def get_knowledge_document(self):
         role = access_role_from_header(self.headers)
-        if require_access and not role:
+        if not role:
             return self.respond_json({"error": "auth_required"}, 401)
         query = parse_qs(urlparse(self.path).query)
         path = query.get("path", [""])[0]
+        course_id = query.get("course", [""])[0]
         # Only read known instructional directories, never arbitrary URLs or local paths.
         if not is_safe_knowledge_path(path):
             return self.respond_json({"error":"not_allowed"}, 400)
+        if not document_access_for(role, course_id, path):
+            return self.respond_json({"error": "forbidden"}, 403)
         try:
             # A temporary problem in the optional editor store must not make
             # the whole knowledge base unreadable.  In that case serve the
@@ -841,10 +935,28 @@ class Handler(SimpleHTTPRequestHandler):
                 override = None
             if isinstance(override, str):
                 return self.respond_json({"path": path, "content": override, "format": "html", "role": role})
-            data = fetch_knowledge_document(path, 350000)
+            data = fetch_knowledge_document(path)
             return self.respond_json({"path":path,"content":data,"format":"markdown","role":role})
         except Exception:
             return self.respond_json({"error":"unavailable"}, 503)
+
+    def get_leader_source_document(self):
+        """Load an arbitrary allowlisted source only in the leader's editor."""
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        path = parse_qs(urlparse(self.path).query).get("path", [""])[0]
+        if not is_safe_knowledge_path(path):
+            return self.respond_json({"error": "not_allowed"}, 400)
+        try:
+            try:
+                override = read_document_overrides().get(path)
+            except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+                override = None
+            if isinstance(override, str):
+                return self.respond_json({"path": path, "content": override, "format": "html", "role": "leader"})
+            return self.respond_json({"path": path, "content": fetch_knowledge_document(path), "format": "markdown", "role": "leader"})
+        except Exception:
+            return self.respond_json({"error": "unavailable"}, 503)
 
     def stream_training_audio(self, head_only=False):
         file_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
@@ -892,7 +1004,8 @@ class Handler(SimpleHTTPRequestHandler):
             if role not in {"leader", "manager", "expert"}:
                 return self.respond_json({"error": "forbidden"}, 403)
             try:
-                return self.respond_json({"catalog": read_library_catalog(), "paths": sorted(knowledge_paths())})
+                paths = knowledge_paths() if role == "leader" else accessible_paths_for(role)
+                return self.respond_json({"catalog": read_library_catalog(), "paths": sorted(paths)})
             except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
                 return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
         if self.path.startswith("/api/academy/library-search?"):
@@ -902,13 +1015,13 @@ class Handler(SimpleHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             if len(query.strip()) > 100:
                 return self.respond_json({"error": "invalid_query"}, 400)
-            return self.respond_json({"paths": search_knowledge_paths(query)})
+            return self.respond_json({"paths": search_knowledge_paths(query, accessible_paths_for(role))})
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
-            return self.get_knowledge_document(require_access=True)
-        if self.path.startswith("/api/knowledge/document?"):
             return self.get_knowledge_document()
+        if self.path.startswith("/api/academy/source-document?"):
+            return self.get_leader_source_document()
         if self.path.startswith("/api/knowledge/status"):
             if CACHE["data"] and time.time() - CACHE["at"] < 300:
                 return self.respond_json(CACHE["data"])
@@ -938,6 +1051,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Robots-Tag", "noindex, nofollow")
+        if self.path.split("?", 1)[0] in {"/", "/index.html"}:
+            self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
 if __name__ == "__main__":
