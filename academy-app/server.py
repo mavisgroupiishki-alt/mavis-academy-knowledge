@@ -132,6 +132,21 @@ def select_knowledge_sources(question):
     return excerpts
 
 
+def search_knowledge_paths(query):
+    terms = normalize_terms(query)
+    if not terms:
+        return []
+    matches = []
+    for path in knowledge_paths():
+        try:
+            haystack = (path + "\n" + fetch_knowledge_document(path, 80000)).lower()
+        except (URLError, HTTPError, TimeoutError, ValueError, UnicodeDecodeError):
+            continue
+        if all(term in haystack for term in terms):
+            matches.append(path)
+    return matches[:120]
+
+
 def _b64(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -758,6 +773,14 @@ class Handler(SimpleHTTPRequestHandler):
             if role not in {"leader", "manager", "expert"}:
                 return self.respond_json({"error": "forbidden"}, 403)
             return self.respond_json({"catalog": read_library_catalog(), "paths": sorted(knowledge_paths())})
+        if self.path.startswith("/api/academy/library-search?"):
+            role = access_role_from_header(self.headers)
+            if role not in {"leader", "manager", "expert"}:
+                return self.respond_json({"error": "forbidden"}, 403)
+            query = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+            if len(query.strip()) > 100:
+                return self.respond_json({"error": "invalid_query"}, 400)
+            return self.respond_json({"paths": search_knowledge_paths(query)})
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):
