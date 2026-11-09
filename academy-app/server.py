@@ -38,10 +38,17 @@ ACCESS_ROLES = {
 }
 ACCESS_TOKEN_TTL = 12 * 60 * 60
 RESULTS_TABLE = "academy_web_attempts"
+PERSISTENT_STATE_TABLE = "mavis_dashboard_kv"
+PERSISTENT_STATE_KEYS = {
+    "curriculum": "academy:trainee-curriculum",
+    "document_overrides": "academy:document-overrides",
+    "library_catalog": "academy:library-catalog",
+}
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
 DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
 LIBRARY_CATALOG_STORE = ROOT / "data" / "library-catalog.json"
 FALLBACK_RESULTS_STORE = ROOT / "data" / "academy-local-results.json"
+PERSISTENT_STATE_CACHE = {}
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
 DRIVE_AUDIO_FILES = {
@@ -225,6 +232,83 @@ def results_request(method, path, payload=None):
     return json.loads(raw.decode("utf-8")) if raw else []
 
 
+def persistent_state_config():
+    """Return the server-only Supabase credentials used for Academy content.
+
+    Content edits must not fall back to Render's ephemeral filesystem in a
+    deployed service.  A separate pair of variables is supported for a future
+    dedicated state store; until then the already configured results project is
+    used.  The service key never reaches the browser.
+    """
+    url = os.getenv("ACADEMY_STATE_URL", os.getenv("ACADEMY_RESULTS_URL", "")).rstrip("/")
+    api_key = os.getenv("ACADEMY_STATE_SERVICE_KEY", os.getenv("ACADEMY_RESULTS_SERVICE_KEY", ""))
+    return (url, api_key) if url and api_key else (None, None)
+
+
+def allow_local_state():
+    # Local JSON is useful only for an explicitly configured development run.
+    # In production, reporting a save failure is safer than silently losing an
+    # editor's work during a restart or a scale-out.
+    return os.getenv("ACADEMY_ALLOW_LOCAL_STATE", "").lower() in {"1", "true", "yes"}
+
+
+def persistent_state_request(method, path, payload=None, prefer="return=representation"):
+    url, api_key = persistent_state_config()
+    if not url or not api_key:
+        raise ValueError("state_not_configured")
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    request = Request(
+        url + "/rest/v1/" + path.lstrip("/"),
+        data=body,
+        headers={
+            "apikey": api_key,
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+            "Prefer": prefer,
+        },
+        method=method,
+    )
+    with urlopen(request, timeout=15) as response:
+        raw = response.read()
+    return json.loads(raw.decode("utf-8")) if raw else []
+
+
+def read_persistent_state(name):
+    key = PERSISTENT_STATE_KEYS[name]
+    cached = PERSISTENT_STATE_CACHE.get(name)
+    if cached and time.time() - cached["at"] < 3:
+        return cached["value"]
+    if not persistent_state_config()[0]:
+        return None
+    rows = persistent_state_request("GET", f"{PERSISTENT_STATE_TABLE}?key=eq.{quote(key, safe='')}&select=value")
+    value = rows[0].get("value") if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+    PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+    return value
+
+
+def write_persistent_state(name, value):
+    key = PERSISTENT_STATE_KEYS[name]
+    if persistent_state_config()[0]:
+        persistent_state_request(
+            "POST",
+            PERSISTENT_STATE_TABLE,
+            {"key": key, "value": value},
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+        return True
+    if not allow_local_state():
+        raise ValueError("state_not_configured")
+    return False
+
+
+def write_local_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
+
+
 def read_fallback_results():
     if not FALLBACK_RESULTS_STORE.is_file():
         return {"trainees": [], "results": []}
@@ -328,6 +412,11 @@ def is_safe_rich_text(value):
 
 
 def read_trainee_curriculum():
+    remote = read_persistent_state("curriculum")
+    if remote is not None:
+        return remote if isinstance(remote, dict) and isinstance(remote.get("courses"), list) and isinstance(remote.get("days"), list) else None
+    if not allow_local_state():
+        return None
     if not CURRICULUM_STORE.is_file():
         return None
     try:
@@ -340,6 +429,11 @@ def read_trainee_curriculum():
 
 
 def read_document_overrides():
+    remote = read_persistent_state("document_overrides")
+    if remote is not None:
+        return remote if isinstance(remote, dict) else {}
+    if not allow_local_state():
+        return {}
     if not DOCUMENT_OVERRIDES_STORE.is_file():
         return {}
     try:
@@ -351,10 +445,17 @@ def read_document_overrides():
 
 def read_library_catalog():
     default = {"hidden": [], "overrides": {}, "custom": []}
-    if not LIBRARY_CATALOG_STORE.is_file():
+    remote = read_persistent_state("library_catalog")
+    if remote is not None:
+        value = remote
+    elif allow_local_state() and LIBRARY_CATALOG_STORE.is_file():
+        try:
+            value = json.loads(LIBRARY_CATALOG_STORE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            value = default
+    else:
         return default
     try:
-        value = json.loads(LIBRARY_CATALOG_STORE.read_text(encoding="utf-8"))
         if not isinstance(value, dict):
             return default
         return {
@@ -572,13 +673,15 @@ class Handler(SimpleHTTPRequestHandler):
             if length < 2 or length > 700000:
                 return self.respond_json({"error": "invalid_size"}, 413)
             curriculum = validate_trainee_curriculum(json.loads(self.rfile.read(length)))
-            CURRICULUM_STORE.parent.mkdir(parents=True, exist_ok=True)
-            temporary = CURRICULUM_STORE.with_suffix(".tmp")
-            temporary.write_text(json.dumps(curriculum, ensure_ascii=False), encoding="utf-8")
-            temporary.replace(CURRICULUM_STORE)
+            if not write_persistent_state("curriculum", curriculum):
+                write_local_json(CURRICULUM_STORE, curriculum)
             return self.respond_json({"saved": True})
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
             return self.respond_json({"error": "invalid_curriculum"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def save_document_override(self):
         if access_role_from_header(self.headers) != "leader":
@@ -590,13 +693,15 @@ class Handler(SimpleHTTPRequestHandler):
             path, content = validate_document_override(json.loads(self.rfile.read(length)))
             overrides = read_document_overrides()
             overrides[path] = content
-            DOCUMENT_OVERRIDES_STORE.parent.mkdir(parents=True, exist_ok=True)
-            temporary = DOCUMENT_OVERRIDES_STORE.with_suffix(".tmp")
-            temporary.write_text(json.dumps(overrides, ensure_ascii=False), encoding="utf-8")
-            temporary.replace(DOCUMENT_OVERRIDES_STORE)
+            if not write_persistent_state("document_overrides", overrides):
+                write_local_json(DOCUMENT_OVERRIDES_STORE, overrides)
             return self.respond_json({"saved": True, "path": path})
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
             return self.respond_json({"error": "invalid_document_override"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def save_library_catalog(self):
         if access_role_from_header(self.headers) != "leader":
@@ -606,13 +711,15 @@ class Handler(SimpleHTTPRequestHandler):
             if length < 2 or length > 120000:
                 return self.respond_json({"error": "invalid_size"}, 413)
             catalog = validate_library_catalog(json.loads(self.rfile.read(length)))
-            LIBRARY_CATALOG_STORE.parent.mkdir(parents=True, exist_ok=True)
-            temporary = LIBRARY_CATALOG_STORE.with_suffix(".tmp")
-            temporary.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
-            temporary.replace(LIBRARY_CATALOG_STORE)
+            if not write_persistent_state("library_catalog", catalog):
+                write_local_json(LIBRARY_CATALOG_STORE, catalog)
             return self.respond_json({"saved": True, "catalog": catalog})
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
             return self.respond_json({"error": "invalid_library_catalog"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def create_access(self):
         try:
@@ -762,17 +869,26 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/academy/trainee-curriculum":
             if not access_role_from_header(self.headers):
                 return self.respond_json({"error": "auth_required"}, 401)
-            curriculum = read_trainee_curriculum()
-            return self.respond_json(curriculum or {})
+            try:
+                curriculum = read_trainee_curriculum()
+                return self.respond_json(curriculum or {})
+            except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+                return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
         if self.path == "/api/academy/document-overrides":
             if access_role_from_header(self.headers) != "leader":
                 return self.respond_json({"error": "forbidden"}, 403)
-            return self.respond_json({"paths": list(read_document_overrides().keys())})
+            try:
+                return self.respond_json({"paths": list(read_document_overrides().keys())})
+            except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+                return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
         if self.path == "/api/academy/library-catalog":
             role = access_role_from_header(self.headers)
             if role not in {"leader", "manager", "expert"}:
                 return self.respond_json({"error": "forbidden"}, 403)
-            return self.respond_json({"catalog": read_library_catalog(), "paths": sorted(knowledge_paths())})
+            try:
+                return self.respond_json({"catalog": read_library_catalog(), "paths": sorted(knowledge_paths())})
+            except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+                return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
         if self.path.startswith("/api/academy/library-search?"):
             role = access_role_from_header(self.headers)
             if role not in {"leader", "manager", "expert"}:
