@@ -832,7 +832,13 @@ class Handler(SimpleHTTPRequestHandler):
         if not is_safe_knowledge_path(path):
             return self.respond_json({"error":"not_allowed"}, 400)
         try:
-            override = read_document_overrides().get(path)
+            # A temporary problem in the optional editor store must not make
+            # the whole knowledge base unreadable.  In that case serve the
+            # committed source and let the editor report its own save error.
+            try:
+                override = read_document_overrides().get(path)
+            except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+                override = None
             if isinstance(override, str):
                 return self.respond_json({"path": path, "content": override, "format": "html", "role": role})
             data = fetch_knowledge_document(path, 350000)
