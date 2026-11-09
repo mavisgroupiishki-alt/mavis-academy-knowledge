@@ -23,6 +23,12 @@ SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)\b(sk-[a-z0-9_-]{16,}|gsk_[a-z0-9_-]{16,}|cfut_[a-z0-9_-]{16,})\b"),
     re.compile(r"(?i)(парол[ья]?|api[_ -]?key|token|secret|credential)\s*[:=]\s*\S+"),
 )
+# Academy is a learning surface, not a contact directory.  Source documents can
+# contain operational contacts, so strip them before any document reaches the browser.
+PERSONAL_CONTACT_PATTERNS = (
+    re.compile(r"(?i)(?:\+?375)[\s().-]*\d{2}[\s().-]*\d{3}[\s().-]*\d{2}[\s().-]*\d{2}"),
+    re.compile(r"(?i)\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"),
+)
 QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
 ACCESS_ROLES = {
     "leader": "ACADEMY_LEADER_PASS",
@@ -76,6 +82,8 @@ def fetch_knowledge_document(path, limit=80000):
             content = response.read(limit).decode("utf-8")
     for pattern in SENSITIVE_CONTENT_PATTERNS:
         content = pattern.sub("[скрыто]", content)
+    for pattern in PERSONAL_CONTACT_PATTERNS:
+        content = pattern.sub("[контакт скрыт]", content)
     return content
 
 

@@ -189,9 +189,18 @@
     'expert-flow':{prompt:'В экспертный отдел передают сделку. Что должно быть передано вместе с ней?',options:['Услуга и полные исходные данные','Контекст договорённости с клиентом','Следующее действие, срок и ответственный','Только название компании','Общий статус без деталей'],answers:[0,1,2]},
     'full-library':{prompt:'Руководитель проверяет ответ стажёра по продукту. Какие действия корректны?',options:['Открыть первоисточник по продукту','Сверить факты с регламентом или скриптом','Зафиксировать, какой материал нужно повторить','Опираться только на общее впечатление','Удалить вопрос без проверки'],answers:[0,1,2]}
   };
+  function cleanSourceLine(value) {
+    return String(value||'').replace(/\u00a0/g,' ').replace(/[ \t]{2,}/g,' ').trim()
+      .replace(/\bфин\.?\s*модель\b/gi,'Финансовая модель')
+      .replace(/\bсмр\b/gi,'СМР')
+      .replace(/\bзам\.?\s*дир\.?\s*[-–—]\s*ги\b/gi,'Заместитель директора — главный инженер')
+      .replace(/\bзам\.?\s*дир\.?\b/gi,'Заместитель директора')
+      .replace(/\bги\b/gi,'Главный инженер');
+  }
+  function isHiddenContactLine(value) { return /(?:^|[:—-]\s*)\[контакт скрыт\]\s*$/i.test(String(value||'').trim()); }
   function richText(value) {
     const lines=esc(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\`(.+?)\`/g, '<code>$1</code>')
-      .split('\n').map(line=>line.replace(/\s*\|\s*$/,'').trim()).filter(line=>line&&line!=='|');
+      .split('\n').map(line=>cleanSourceLine(line.replace(/\s*\|\s*$/,'').trim())).filter(line=>line&&line!=='|'&&!isHiddenContactLine(line));
     const blocks=[], bullets=[];
     const flushBullets=()=>{if(bullets.length){blocks.push(`<ul>${bullets.map(item=>`<li>${item}</li>`).join('')}</ul>`);bullets.length=0;}};
     lines.forEach(line=>{
@@ -230,7 +239,7 @@
     const lines=text.split('\n'), output=[];
     for(let index=0;index<lines.length;){
       if(/^\|/.test(lines[index])){const table=[];while(index<lines.length&&/^\|/.test(lines[index]))table.push(lines[index++]);output.push(sheetTable(table));continue;}
-      const line=lines[index++].trim(); if(!line||/^#{0,3}\s*(первичный источник|полное содержимое из источника|полный текст из источника)$/i.test(line)||/^(направляю|направляем)\s+актуальн\w*\s+форм\w*/i.test(line)) continue;
+      const line=cleanSourceLine(lines[index++]); if(!line||isHiddenContactLine(line)||/^#{0,3}\s*(первичный источник|полное содержимое из источника|полный текст из источника)$/i.test(line)||/^(направляю|направляем)\s+актуальн\w*\s+форм\w*/i.test(line)) continue;
       if(/^#{1,3}\s/.test(line)){const heading=line.replace(/^#{1,3}\s/,'');output.push(`<h2 class="course-section-heading">${esc(heading.replace(/^Лист:\s*/,''))}</h2>`);continue;}
       output.push(`<div class="course-prose">${richText(line)}</div>`);
     }
@@ -245,7 +254,7 @@
     const role = access?.role || state.role;
     const trainee = role === 'trainee', leader = role === 'leader';
     const next = traineeNextStep();
-    return `<div class="academy-product-app"><aside class="product-side"><div class="product-brand"><i>M</i><span>Mavis<br><b>Academy</b></span></div><div class="product-role"><span>Личный кабинет</span><b>${esc(roleName(role))}</b></div><nav><button class="${state.page==='catalog'?'active':''}" onclick="academyCatalog()">▦ ${trainee?'Мой маршрут':'Все обучения'}</button>${trainee?`<button class="next-step" onclick="academyContinue()"><span>▤ Следующее действие</span><small>${esc(next.label)}</small></button>`:''}${leader?`<button class="${state.page==='leader-results'?'active':''}" onclick="academyLeaderResults()">◉ Результаты стажёров</button>`:''}<button onclick="academyAsk()">✦ Спросить помощника</button></nav><div class="product-progress"><span>${trainee?'Материалы изучены':'Изучено'}</span><b>${totalDone()} / ${progressTotal()}</b><i><em style="width:${progressTotal() ? Math.round(totalDone()/progressTotal()*100) : 0}%"></em></i></div><button class="product-exit" onclick="academyLogout()">↩ Сменить роль</button></aside><main class="product-main">${inner}</main></div>${state.test ? testModal() : ''}${state.chat ? assistantChatModal() : ''}`;
+    return `<div class="academy-product-app"><aside class="product-side"><div class="product-brand"><i>M</i><span>Mavis<br><b>Academy</b></span></div><div class="product-role"><span>Личный кабинет</span><b>${esc(roleName(role))}</b></div><nav><button class="${state.page==='catalog'?'active':''}" onclick="academyCatalog()">▦ ${trainee?'Мой маршрут':'Все обучения'}</button>${trainee?`<button class="next-step" onclick="academyContinue()"><span>▤ Следующее действие</span><small>${esc(next.label)}</small></button>`:''}${leader?`<button class="${state.page==='leader-results'?'active':''}" onclick="academyLeaderResults()">◉ Стажёры и результаты</button><button class="${state.page==='curriculum-editor'?'active':''}" onclick="academyCurriculumEditor()">✎ Редактор плиток</button>`:''}<button onclick="academyAsk()">✦ Спросить помощника</button></nav><div class="product-progress"><span>${trainee?'Материалы изучены':'Изучено'}</span><b>${totalDone()} / ${progressTotal()}</b><i><em style="width:${progressTotal() ? Math.round(totalDone()/progressTotal()*100) : 0}%"></em></i></div><button class="product-exit" onclick="academyLogout()">↩ Сменить роль</button></aside><main class="product-main">${inner}</main></div>${state.test ? testModal() : ''}${state.chat ? assistantChatModal() : ''}`;
   }
   function courseCard(course) { return `<button class="course-card course-${course.color}" onclick="academyOpen('${course.id}')"><span class="course-card-icon">${course.icon}</span><span class="course-card-main"><small>${esc(course.eyebrow)}</small><b>${esc(course.title)}</b><p>${esc(course.lead)}</p></span><span class="course-card-footer"><i>${course.sources.length} материалов</i><strong>${done(course) ? '✓ Изучено' : 'Открыть →'}</strong></span></button>`; }
   function sourceTitle(path) {
