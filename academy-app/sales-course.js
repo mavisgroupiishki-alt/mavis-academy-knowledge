@@ -273,12 +273,16 @@ function renderEducationDocument(raw,title){
   }
   let count=rows.filter(r=>!r.sheet && r.body.trim()).length;
   const isSpk=/0101.*СПК/i.test(title)||/Паспорт продукта.*СПК/i.test(title);
-  return `<article class="edu-document"><div class="edu-intro"><h3>${E(title)}</h3><p>Данные распределены по темам. Сначала выясняем вид строительства, затем реальные виды работ, затем — требования к документам и специалистам.</p><span class="pill">${count} разделов</span></div>`+
+  const intro=isSpk
+    ?'Данные распределены по темам. Сначала выясняем вид строительства, затем реальные виды работ, затем — требования к документам и специалистам.'
+    :'Данные разложены по рабочим разделам: назначение услуги, условия, требования, документы и последовательность действий. Открывайте только нужный раздел, а не ищите в сплошной таблице.';
+  return `<article class="edu-document"><div class="edu-intro"><h3>${E(title)}</h3><p>${intro}</p><span class="pill">${count} разделов</span></div>`+
   rows.map((r,i)=>{
     if(r.sheet) return `<h3 class="edu-sheet">${E(r.sheet)}</h3>`;
     const label=r.name.replace(/<br\s*\/?\s*>/gi,' ').replace(/\s+/g,' ').trim();
+    if(/^(категория|наименование|вид работ)$/i.test(label)&&/^(информация|значение)$/i.test(r.body.trim()))return '';
     if(!r.body.trim()) return `<h3 class="edu-section-title">${E(label)}</h3>`;
-    if(/Основные виды строительства/i.test(label)) return `<section class="edu-topic edu-special">${constructionTypeLesson()}</section>`;
+    if(isSpk && /Основные виды строительства/i.test(label)) return `<section class="edu-topic edu-special">${constructionTypeLesson()}</section>`;
     if(isSpk && /ОБЛАСТЬ СПК|Виды строительно|виды работ, включаемые/i.test(label)) return `<section class="edu-topic edu-special">${spkScopeLesson(r.body)}</section>`;
     return `<details class="edu-topic" ${i<6?'open':''}><summary><span class="edu-topic-name">${E(label||'Дополнительные сведения')}</span><span class="edu-toggle">Развернуть / свернуть</span></summary><div class="edu-topic-content">${renderEducationBody(r.body)}</div></details>`;
   }).join('')+'</article>';
