@@ -98,12 +98,20 @@ class CourseSourceContractTests(unittest.TestCase):
         for role in ("manager", "expert", "leader"):
             self.assertTrue(server.document_access_for(role, "any-course", "02 PRODUCTS/valid.md"))
 
-    def test_reader_controls_expose_the_open_section_and_selected_material(self):
+    def test_staff_reader_uses_role_specific_workspaces(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
-        self.assertIn('aria-pressed="${!state.referenceView}"', source)
-        self.assertIn('aria-current="${index===selectedIndex?\'page\':\'false\'}"', source)
-        self.assertIn("state.readerNotice", source)
+        self.assertIn("const activeAudience=()", source)
+        self.assertIn("const sourceIndexesForAudience=", source)
+        self.assertIn("const ROLE_WORKSPACES=", source)
+        self.assertIn("roles:['manager','leader']", source)
+        self.assertIn("roles:['expert','leader']", source)
+        self.assertIn("!isExpertSource(path)", source)
+        self.assertIn("!isManagerSource(path)", source)
+        self.assertIn("Понятие", source)
+        self.assertIn("Инструменты и документы", source)
+        self.assertIn("Подсказки для", source)
+        self.assertIn("window.academyAudience=", source)
 
     def test_trainee_spk_is_a_standalone_curriculum_lesson(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
