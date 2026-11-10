@@ -114,6 +114,39 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(captured["url"], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
         self.assertNotIn("server-only-token", captured["url"])
 
+    def test_cloudflare_state_request_uses_header_token_and_does_not_expose_it_in_url(self):
+        captured = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return b'{"value":{"custom":[]}}'
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["headers"] = dict(request.header_items())
+            captured["method"] = request.get_method()
+            captured["timeout"] = timeout
+            return Response()
+
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_WRITE_TOKEN": "server-only-token",
+        }, clear=False), patch.object(server, "urlopen", fake_urlopen):
+            payload = server.persistent_state_request("POST", "academy:library-catalog", {"custom": []})
+
+        self.assertEqual(payload, {"value": {"custom": []}})
+        self.assertEqual(captured["url"], "https://mavis-academy-state.example.workers.dev/state?key=academy%3Alibrary-catalog")
+        self.assertEqual(captured["method"], "PUT")
+        self.assertEqual(captured["headers"]["X-academy-state-token"], "server-only-token")
+        self.assertNotIn("server-only-token", captured["url"])
+
 
 if __name__ == "__main__":
     unittest.main()

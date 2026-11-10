@@ -246,15 +246,19 @@ def results_request(method, path, payload=None):
 def persistent_state_config():
     """Return the server-only connection used for Academy content edits.
 
-    The browser never sees the access token.  Supabase RPC functions verify it
-    before reading or writing one of the explicitly allowlisted state records.
-    A dedicated state configuration can still be supplied later; the results
-    connection remains the default.
+    Cloudflare D1 is the primary production store.  The existing Supabase RPC
+    path remains available while the migration is deployed.  In both cases the
+    browser never receives the token used to read or write editor state.
     """
+    backend = os.getenv("ACADEMY_STATE_BACKEND", "supabase").lower()
+    access_token = os.getenv("ACADEMY_STATE_WRITE_TOKEN", os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", ""))
+    if backend == "cloudflare":
+        url = os.getenv("ACADEMY_STATE_URL", "").rstrip("/")
+        return (backend, url, None, access_token) if url and access_token else (None, None, None, None)
+
     url = os.getenv("ACADEMY_STATE_URL", os.getenv("ACADEMY_RESULTS_URL", "")).rstrip("/")
     api_key = os.getenv("ACADEMY_STATE_SERVICE_KEY", os.getenv("ACADEMY_RESULTS_SERVICE_KEY", ""))
-    access_token = os.getenv("ACADEMY_STATE_WRITE_TOKEN", os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", ""))
-    return (url, api_key, access_token) if url and api_key and access_token else (None, None, None)
+    return (backend, url, api_key, access_token) if url and api_key and access_token else (None, None, None, None)
 
 
 def allow_local_state():
@@ -265,9 +269,26 @@ def allow_local_state():
 
 
 def persistent_state_request(method, key, value=None):
-    url, api_key, access_token = persistent_state_config()
-    if not url or not api_key or not access_token:
+    backend, url, api_key, access_token = persistent_state_config()
+    if not backend or not url or not access_token:
         raise ValueError("state_not_configured")
+
+    if backend == "cloudflare":
+        body = json.dumps({"value": value}, ensure_ascii=False).encode("utf-8") if method == "POST" else None
+        request = Request(
+            url + "/state?key=" + quote(key, safe=""),
+            data=body,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-Academy-State-Token": access_token,
+            },
+            method="PUT" if method == "POST" else "GET",
+        )
+        with urlopen(request, timeout=15) as response:
+            raw = response.read()
+        return json.loads(raw.decode("utf-8")) if raw else {}
+
     function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
     payload = {"p_access_token": access_token, "p_key": key}
     if method == "POST":
