@@ -111,31 +111,16 @@
     {q:'При передаче сделки эксперту менеджер обязан:', options:['Передать только название компании','Передать исходные данные, задачу клиента и согласованный следующий шаг','Удалить старые комментарии'], answer:1},
     {q:'Что делать, если клиент возражает из-за сроков?', options:['Спорить и требовать оплату','Проверить причину, обозначить пользу и согласовать конкретное следующее действие','Закрыть сделку без задачи'], answer:1},
   ];
-  // The trainee programme used to contain isolated short notes.  Keep the
-  // day-by-day learning plan, but attach every standard card to the same
-  // complete, source-backed material that managers, experts and leaders use.
-  // This is also applied to the curriculum saved before this change.
-  const TRAINEE_SOURCE_COURSES={
-    'tr-company':'company','tr-company-video':'company','tr-products':'spk',
-    'tr-product-review':'attestation','tr-script':'sales','tr-price-kp':'product-cert',
-    'tr-calls':'sales','tr-practice':'sales','tr-bitrix':'bitrix','tr-tables':'bitrix',
-    'tr-final-review':'full-library','tr-cold-calls':'sales','tr-first-kp':'sales',
-    'tr-case-kp':'sales','tr-att-st':'attestation','tr-att-gs':'attestation',
-    'tr-iso-cert':'iso-suot','tr-iso-periodic':'iso-suot','tr-suot-cert':'iso-suot',
-    'tr-suot-periodic':'iso-suot'
-  };
-  const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>{
-    const sourceCourseId=TRAINEE_SOURCE_COURSES[course?.id], sourceCourse=COURSES.find(item=>item.id===sourceCourseId);
-    if(!sourceCourse)return course;
-    // The final trainee card is the same full library available to staff.
-    // Make that visible in the card itself instead of disguising 117 sources
-    // as a short "repeat the products" lesson.
-    const fullLibraryCard=sourceCourseId==='full-library'?{
-      icon:sourceCourse.icon,color:sourceCourse.color,title:sourceCourse.title,
-      eyebrow:sourceCourse.eyebrow,lead:sourceCourse.lead
-    }:{};
-    return {...course,...fullLibraryCard,sourceCourse:sourceCourseId,sources:[...sourceCourse.sources],fallbackContent:course.content||'',content:''};
-  });
+  // A trainee sees the approved four-day programme, not the staff reference
+  // library.  The programme contains its own authored lessons; passports,
+  // country-specific ISO references and other working sources stay in staff
+  // tiles only.  Apply this to already saved versions of the curriculum too.
+  const TRAINEE_COURSE_IDS=new Set([...TRAINEE_FOUNDATION_COURSES,...TRAINEE_COURSES].map(course=>course.id));
+  const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>
+    TRAINEE_COURSE_IDS.has(course?.id)
+      ? {...course,sources:[],sourceCourse:'',fallbackContent:''}
+      : course
+  );
   let traineeCourses = bindTraineeSources([...TRAINEE_FOUNDATION_COURSES, ...TRAINEE_COURSES]);
   let traineeDays = TRAINEE_DAYS;
   // The full base is an ordinary, read-only tile for every role.  Leader-only
@@ -176,8 +161,9 @@
   });
   const done = course => Boolean(progress[course.id]?.done);
   const lessonDone = (course, index) => Boolean(progress[`lesson:${course.id}:${index}`]?.done);
-  const totalDone = () => (access?.role||state.role)==='trainee' ? coursesFor().reduce((total,course)=>total+course.sources.filter((_,index)=>lessonDone(course,index)).length,0) : coursesFor().filter(done).length;
-  const progressTotal = () => (access?.role||state.role)==='trainee' ? coursesFor().reduce((total,course)=>total+course.sources.length,0) : coursesFor().length;
+  const courseLessonCount=course=>(course?.sources||[]).length || (String(course?.content||'').trim()?1:0);
+  const totalDone = () => (access?.role||state.role)==='trainee' ? coursesFor().reduce((total,course)=>total+Array.from({length:courseLessonCount(course)},(_,index)=>lessonDone(course,index)?1:0).reduce((sum,value)=>sum+value,0),0) : coursesFor().filter(done).length;
+  const progressTotal = () => (access?.role||state.role)==='trainee' ? coursesFor().reduce((total,course)=>total+courseLessonCount(course),0) : coursesFor().length;
   const authHeaders = () => access?.token ? {Authorization:`Bearer ${access.token}`} : {};
   const current = () => coursesFor().find(course => course.id === state.course);
   const isReferenceMaterial = path => /^02 PRODUCTS\/Паспорт продукта — /u.test(path);
@@ -196,7 +182,7 @@
   };
   const traineeNextStep = () => {
     const day = traineeDays[state.traineeDay];
-    const pending = day.courseIds.map(id=>coursesFor().find(course=>course.id===id)).find(course=>course && course.sources.some((_,index)=>!lessonDone(course,index)));
+    const pending = day.courseIds.map(id=>coursesFor().find(course=>course.id===id)).find(course=>course && Array.from({length:courseLessonCount(course)},(_,index)=>!lessonDone(course,index)).some(Boolean));
     if (pending) return {label:`День ${state.traineeDay+1}: ${pending.title}`, type:'course', id:pending.id};
     if (state.traineeDay < 3) return {label:`Открыть день ${state.traineeDay+2}`, type:'day', id:state.traineeDay+1};
     return {label:'Итоговая аттестация', type:'exam'};
@@ -401,7 +387,7 @@
     const next = traineeNextStep();
     return `<div class="academy-product-app"><aside class="product-side"><div class="product-brand"><i>M</i><span>Mavis<br><b>Academy</b></span></div><div class="product-role"><span>Личный кабинет</span><b>${esc(roleName(role))}</b></div><nav><button class="${state.page==='catalog'?'active':''}" onclick="academyCatalog()">▦ ${trainee?'Мой маршрут':'Все обучения'}</button>${trainee?`<button class="next-step" onclick="academyContinue()"><span>▤ Следующее действие</span><small>${esc(next.label)}</small></button>`:''}${editor?`<button class="${state.page==='test-hub'?'active':''}" onclick="academyTestHub()">✓ Тесты по базе</button><button class="${state.page==='curriculum-editor'?'active':''}" onclick="academyCurriculumEditor()">✎ Плитки стажировки</button><button class="${state.page==='library-editor'?'active':''}" onclick="academyLibraryEditor()">✎ Плитки базы</button><button class="${state.page==='source-editor'?'active':''}" onclick="academySourceEditor()">✎ Редактор базы</button>`:''}${leader?`<button class="${state.page==='leader-results'?'active':''}" onclick="academyLeaderResults()">◉ Стажёры и результаты</button>`:''}<button onclick="academyAsk()">✦ Спросить помощника</button></nav><div class="product-progress"><span>${trainee?'Материалы изучены':'Изучено'}</span><b>${totalDone()} / ${progressTotal()}</b><i><em style="width:${progressTotal() ? Math.round(totalDone()/progressTotal()*100) : 0}%"></em></i></div><button class="product-exit" onclick="academyLogout()">↩ Сменить роль</button></aside><main class="product-main">${inner}</main></div>${state.test ? testModal() : ''}${state.chat ? assistantChatModal() : ''}`;
   }
-  function courseCard(course) { return `<button class="course-card course-${course.color}" onclick="academyOpen('${course.id}')"><span class="course-card-icon">${course.icon}</span><span class="course-card-main"><small>${esc(course.eyebrow)}</small><b>${esc(course.title)}</b><p>${esc(course.lead)}</p></span><span class="course-card-footer"><i>${course.sources.length} материалов</i><strong>${done(course) ? '✓ Изучено' : 'Открыть →'}</strong></span></button>`; }
+  function courseCard(course) { return `<button class="course-card course-${course.color}" onclick="academyOpen('${course.id}')"><span class="course-card-icon">${course.icon}</span><span class="course-card-main"><small>${esc(course.eyebrow)}</small><b>${esc(course.title)}</b><p>${esc(course.lead)}</p></span><span class="course-card-footer"><i>${courseLessonCount(course)} материалов</i><strong>${done(course) ? '✓ Изучено' : 'Открыть →'}</strong></span></button>`; }
   function sourceTitle(path) {
     const base=path.split('/').pop().replace(/\.(docx\.)?md$/,'').replace(/^Паспорт продукта\s*—\s*\d+[.]?\d*\s*/,'').replace(/^(Скрипты|Регламент|Инструкция|Шаблоны|SOP|Процесс)\s*—\s*/,'').replace(/\s*\([^)]*\)\s*$/,'').trim();
     const titles={
@@ -436,7 +422,7 @@
     };
     return titles[base] || base;
   }
-  function lessonCard(course, path, index, mode='study') { const title=sourceTitle(path); const isReview=mode==='review'; return `<button class="course-card course-${course.color}${isReview?' is-review':''}" onclick="academyOpenSource('${course.id}',${index})"><span class="course-card-icon">${isReview?'↻':course.icon}</span><span class="course-card-main"><small>${isReview?'ПОВТОРЕНИЕ · ДЕНЬ 01':esc(course.title)}</small><b>${esc(title)}</b><p>${isReview?'Закрепите ключевые условия перед скриптом и КП.':`${esc(course.eyebrow)} · урок ${index+1} из ${course.sources.length}`}</p></span><span class="course-card-footer"><i>${isReview?'Повторить материал':'Изучение по плану дня'}</i><strong>${lessonDone(course,index) ? '✓ Изучено' : 'Открыть →'}</strong></span></button>`; }
+  function lessonCard(course, path, index, mode='study') { const hasSource=Boolean(path),title=hasSource?sourceTitle(path):course.title,isReview=mode==='review',open=hasSource?`academyOpenSource('${course.id}',${index})`:`academyOpen('${course.id}')`; return `<button class="course-card course-${course.color}${isReview?' is-review':''}" onclick="${open}"><span class="course-card-icon">${isReview?'↻':course.icon}</span><span class="course-card-main"><small>${isReview?'ПОВТОРЕНИЕ · ДЕНЬ 01':esc(course.title)}</small><b>${esc(title)}</b><p>${isReview?'Закрепите ключевые условия перед скриптом и КП.':`${esc(course.eyebrow)} · урок ${index+1} из ${courseLessonCount(course)}`}</p></span><span class="course-card-footer"><i>${isReview?'Повторить материал':'Изучение по плану дня'}</i><strong>${lessonDone(course,index) ? '✓ Изучено' : 'Открыть →'}</strong></span></button>`; }
   function traineePlan() { return `<section class="trainee-plan"><div class="trainee-plan-head"><span>ПЛАН СТАЖИРОВКИ · 4 ДНЯ</span><h2>Открывайте день — и сразу видите, что сделать</h2><p>Маршрут устроен по плану отдела продаж. Во второй день первый блок явно помечен как «Повторить», а новые темы идут отдельным блоком «Изучить».</p></div><div class="trainee-days">${traineeDays.map((day,index)=>`<article class="trainee-day ${index===state.traineeDay?'active':''}"><b>День ${String(index+1).padStart(2,'0')}</b><h3>${esc(day.title)}</h3><p>${esc(day.intro)}</p><small>Результат: ${esc(day.result)}</small><button onclick="academySelectDay(${index})">${index===3?'Открыть задания и экзамен →':'Открыть день →'}</button></article>`).join('')}</div></section>`; }
   function catalog() {
     const allCourses = coursesFor();
@@ -448,12 +434,12 @@
     const day = traineeDays[state.traineeDay];
     const dayCourses = trainee ? list.filter(course=>day.courseIds.includes(course.id)) : list;
     const reviewCourses = trainee ? list.filter(course=>(day.reviewCourseIds||[]).includes(course.id)) : [];
-    const cards = trainee ? dayCourses.flatMap(course=>course.sources.map((path,index)=>lessonCard(course,path,index))) : list.map(courseCard);
-    const reviewCards = reviewCourses.flatMap(course=>course.sources.map((path,index)=>lessonCard(course,path,index,'review')));
+    const cards = trainee ? dayCourses.flatMap(course=>Array.from({length:courseLessonCount(course)},(_,index)=>lessonCard(course,course.sources[index]||'',index))) : list.map(courseCard);
+    const reviewCards = reviewCourses.flatMap(course=>Array.from({length:courseLessonCount(course)},(_,index)=>lessonCard(course,course.sources[index]||'',index,'review')));
     const dayAction = !trainee ? `<section class="course-toolbar"><div><h2>Поиск по базе</h2><p>Ищет в названии плитки и внутри всех подключённых материалов.</p></div><input class="academy-tile-search" value="${esc(state.catalogQuery)}" placeholder="Госпромнадзор, договор, сварщик…" oninput="academySearchTiles(this.value)"></section>` : state.traineeDay===3 ? `${callTrainingPanel()}<section class="trainee-day-action"><span>ДЕНЬ 04 · ФИНАЛ</span><h2>Разбор звонков и итоговая аттестация</h2><p>Сначала послушайте примеры и сравните диагностику, пользу и договорённость. Затем откройте один итоговый тест.</p><button class="reader-test" onclick="academyFinalExam()">Начать итоговый тест →</button></section>` : '';
     const catalogEditor = editor ? `<section class="catalog-editor-banner"><div><span>ОБЩАЯ БАЗА · РЕДАКТИРОВАНИЕ</span><h2>Создавайте и убирайте плитки прямо из каталога</h2><p>Новая плитка открывается пустым черновиком: без раздела и материала. Добавляйте текст и источники только тогда, когда они нужны.</p></div><div><button class="reader-test" onclick="academyCreateLibraryTile()">＋ Создать пустую плитку</button><button class="reader-complete" onclick="academyLibraryEditor()">Управлять плитками</button></div></section>` : '';
     const standardCards=trainee?cards:list.map(courseCard);
-    return shell(`<header class="product-hero"><div><span>ВАШЕ ОБУЧЕНИЕ · ${esc(roleName(access?.role || state.role).toUpperCase())}</span><h1>${trainee?`День ${String(state.traineeDay+1).padStart(2,'0')} · ${esc(day.title)}`:'Не навигатор.\x3cbr>Настоящая база знаний.'}</h1><p>${trainee?esc(day.intro):'Выберите продукт или процесс: читайте учебный материал внутри Academy, закрепляйте его в заданиях и отмечайте тему изученной.'}</p></div><div class="product-hero-note"><b>${trainee?state.traineeDay+1:list.length}</b><span>${trainee?'день из 4':'учебных маршрутов'}</span><small>${trainee?'откройте карточку дня выше':'только полезные материалы'}</small></div></header>${trainee?traineePlan():''}<section class="course-summary"><span><b>${totalDone()}</b> изучено</span><span><b>${trainee?dayCourses.reduce((n,c)=>n+c.sources.length,0)+reviewCourses.reduce((n,c)=>n+c.sources.length,0):list.reduce((n,c)=>n+c.sources.length,0)}</b> материалов в этом разделе</span><span><b>3</b> формата практики в каждой теме</span></section>${catalogEditor}${dayAction}${reviewCards.length?`<section class="course-toolbar course-toolbar-review"><div><h2>Повторить</h2><p>Материалы первого дня для закрепления перед новыми темами.</p></div></section><section class="course-grid course-grid-review">${reviewCards.join('')}</section>`:''}<section class="course-toolbar"><div><h2>${trainee?'Изучить':'Продукты и процессы'}</h2><p>${trainee?'Новые материалы выбранного дня: откройте, изучите и отметьте их.':'Полезные учебные маршруты: продукты, продажи, экспертиза, CRM и регламенты.'}</p></div><button class="course-ai-button" onclick="academyAsk()">✦ Помощник по базе знаний</button></section>${standardCards.length?`<section class="course-grid">${standardCards.join('')}</section>`:''}`);
+    return shell(`<header class="product-hero"><div><span>ВАШЕ ОБУЧЕНИЕ · ${esc(roleName(access?.role || state.role).toUpperCase())}</span><h1>${trainee?`День ${String(state.traineeDay+1).padStart(2,'0')} · ${esc(day.title)}`:'Не навигатор.\x3cbr>Настоящая база знаний.'}</h1><p>${trainee?esc(day.intro):'Выберите продукт или процесс: читайте учебный материал внутри Academy, закрепляйте его в заданиях и отмечайте тему изученной.'}</p></div><div class="product-hero-note"><b>${trainee?state.traineeDay+1:list.length}</b><span>${trainee?'день из 4':'учебных маршрутов'}</span><small>${trainee?'откройте карточку дня выше':'только полезные материалы'}</small></div></header>${trainee?traineePlan():''}<section class="course-summary"><span><b>${totalDone()}</b> изучено</span><span><b>${trainee?dayCourses.reduce((n,c)=>n+courseLessonCount(c),0)+reviewCourses.reduce((n,c)=>n+courseLessonCount(c),0):list.reduce((n,c)=>n+courseLessonCount(c),0)}</b> материалов в этом разделе</span><span><b>3</b> формата практики в каждой теме</span></section>${catalogEditor}${dayAction}${reviewCards.length?`<section class="course-toolbar course-toolbar-review"><div><h2>Повторить</h2><p>Материалы первого дня для закрепления перед новыми темами.</p></div></section><section class="course-grid course-grid-review">${reviewCards.join('')}</section>`:''}<section class="course-toolbar"><div><h2>${trainee?'Изучить':'Продукты и процессы'}</h2><p>${trainee?'Новые материалы выбранного дня: откройте, изучите и отметьте их.':'Полезные учебные маршруты: продукты, продажи, экспертиза, CRM и регламенты.'}</p></div><button class="course-ai-button" onclick="academyAsk()">✦ Помощник по базе знаний</button></section>${standardCards.length?`<section class="course-grid">${standardCards.join('')}</section>`:''}`);
   }
   function testHub() {
     const courses=coursesFor();
@@ -615,7 +601,7 @@
   window.academySelectDay=index=>{state.traineeDay=index;state.page='catalog';render();window.scrollTo(0,0);};
   window.academyContinue=()=>{if((access?.role||state.role)==='trainee'){const next=traineeNextStep();if(next.type==='course')return academyOpen(next.id);if(next.type==='day')return academySelectDay(next.id);return academyFinalExam();}const pending=coursesFor().find(course=>!done(course))||coursesFor()[0]; if(pending) academyOpen(pending.id);};
   window.academyComplete=id=>{progress[id]={done:!done({id}),at:new Date().toISOString()};saveProgress();render();};
-  window.academyCompleteSource=(id,index)=>{const course=current()&&current().id===id?current():coursesFor().find(item=>item.id===id);if(!course||!course.sources[index])return;const key=`lesson:${id}:${index}`;progress[key]={done:!lessonDone(course,index),at:new Date().toISOString()};saveProgress();render();};
+  window.academyCompleteSource=(id,index)=>{const course=current()&&current().id===id?current():coursesFor().find(item=>item.id===id);if(!course||(!course.sources[index]&&!(index===0&&course.content)))return;const key=`lesson:${id}:${index}`;progress[key]={done:!lessonDone(course,index),at:new Date().toISOString()};saveProgress();render();};
   window.academyReloadCourse=()=>loadDocument();
   window.academyTest=id=>{const course=coursesFor().find(item=>item.id===id);if(!course)return;state.course=course.id;state.test=true;state.answer=null;state.order=[];state.orderChecked=false;state.matches={};state.matchChecked=false;state.caseChoices={};state.caseChecked=false;state.practiceSaving=false;state.practiceError='';render();};
   window.academyCloseTest=()=>{state.test=false;render();};

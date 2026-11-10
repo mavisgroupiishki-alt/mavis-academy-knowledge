@@ -105,14 +105,20 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn('aria-current="${index===selectedIndex?\'page\':\'false\'}"', source)
         self.assertIn("state.readerNotice", source)
 
-    def test_trainee_spk_uses_allowed_source_with_a_readable_fallback(self):
+    def test_trainee_spk_is_a_standalone_curriculum_lesson(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
-        self.assertIn("'tr-products':'spk'", source)
-        self.assertIn("fallbackContent:course.content", source)
-        self.assertIn("Материал временно недоступен", source)
-        self.assertIn("Внешние материалы", source)
-        self.assertTrue(server.document_access_for("trainee", "spk", "02 PRODUCTS/Учебный маршрут — СПК.md"))
+        self.assertIn("id:'tr-spk'", source)
+        self.assertIn("СПК: свидетельство", source)
+        self.assertIn("const TRAINEE_COURSE_IDS=new Set", source)
+        self.assertNotIn("const TRAINEE_SOURCE_COURSES", source)
+
+    def test_trainee_keeps_the_four_day_curriculum_instead_of_staff_reference_tabs(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("const TRAINEE_DAYS = [", source)
+        self.assertIn("sources:[],sourceCourse:'',fallbackContent:''", source)
+        self.assertIn("const courseLessonCount=course=>", source)
 
     def test_new_working_materials_are_readable_by_their_assigned_roles(self):
         manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
