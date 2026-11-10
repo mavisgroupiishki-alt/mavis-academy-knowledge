@@ -33,6 +33,7 @@ ACCESS_ROLES = {
     "manager": "ACADEMY_MANAGER_PASS",
     "expert": "ACADEMY_EXPERT_PASS",
 }
+STAFF_ROLES = {"manager", "expert", "leader"}
 ACCESS_TOKEN_TTL = 12 * 60 * 60
 RESULTS_TABLE = "academy_web_attempts"
 PERSISTENT_STATE_TABLE = "mavis_dashboard_kv"
@@ -640,6 +641,10 @@ def custom_course_access(course_id):
 def document_access_for(role, course_id, path):
     if role not in ACCESS_ROLES or not is_safe_knowledge_path(path):
         return False
+    # The three staff roles share one operational knowledge base.  The
+    # allowlist above still prevents arbitrary local or remote file access.
+    if role in STAFF_ROLES:
+        return True
     access = course_access_manifest().get(course_id) or custom_course_access(course_id)
     if not access or role not in access["roles"]:
         return False
@@ -650,6 +655,8 @@ def accessible_paths_for(role):
     """Return only paths connected to a tile that this role may open."""
     if role not in ACCESS_ROLES:
         return set()
+    if role in STAFF_ROLES:
+        return set(knowledge_paths())
     paths = set()
     for access in course_access_manifest().values():
         if role not in access["roles"]:
@@ -805,7 +812,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"results": fallback["results"], "trainees": fallback["trainees"], "storage": "server_fallback"})
 
     def save_trainee_curriculum(self):
-        if access_role_from_header(self.headers) != "leader":
+        if access_role_from_header(self.headers) not in STAFF_ROLES:
             return self.respond_json({"error": "forbidden"}, 403)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -823,7 +830,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def save_document_override(self):
-        if access_role_from_header(self.headers) != "leader":
+        if access_role_from_header(self.headers) not in STAFF_ROLES:
             return self.respond_json({"error": "forbidden"}, 403)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -843,7 +850,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def save_library_catalog(self):
-        if access_role_from_header(self.headers) != "leader":
+        if access_role_from_header(self.headers) not in STAFF_ROLES:
             return self.respond_json({"error": "forbidden"}, 403)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -992,8 +999,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error":"unavailable"}, 503)
 
     def get_leader_source_document(self):
-        """Load an arbitrary allowlisted source only in the leader's editor."""
-        if access_role_from_header(self.headers) != "leader":
+        """Load an arbitrary allowlisted source in the shared staff editor."""
+        if access_role_from_header(self.headers) not in STAFF_ROLES:
             return self.respond_json({"error": "forbidden"}, 403)
         path = parse_qs(urlparse(self.path).query).get("path", [""])[0]
         if not is_safe_knowledge_path(path):
@@ -1004,8 +1011,8 @@ class Handler(SimpleHTTPRequestHandler):
             except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
                 override = None
             if isinstance(override, str):
-                return self.respond_json({"path": path, "content": override, "format": "html", "role": "leader"})
-            return self.respond_json({"path": path, "content": fetch_knowledge_document(path), "format": "markdown", "role": "leader"})
+                return self.respond_json({"path": path, "content": override, "format": "html", "role": access_role_from_header(self.headers)})
+            return self.respond_json({"path": path, "content": fetch_knowledge_document(path), "format": "markdown", "role": access_role_from_header(self.headers)})
         except Exception:
             return self.respond_json({"error": "unavailable"}, 503)
 
@@ -1044,7 +1051,7 @@ class Handler(SimpleHTTPRequestHandler):
             except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
                 return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
         if self.path == "/api/academy/document-overrides":
-            if access_role_from_header(self.headers) != "leader":
+            if access_role_from_header(self.headers) not in STAFF_ROLES:
                 return self.respond_json({"error": "forbidden"}, 403)
             try:
                 return self.respond_json({"paths": list(read_document_overrides().keys())})
@@ -1055,7 +1062,7 @@ class Handler(SimpleHTTPRequestHandler):
             if role not in {"leader", "manager", "expert"}:
                 return self.respond_json({"error": "forbidden"}, 403)
             try:
-                paths = knowledge_paths() if role == "leader" else accessible_paths_for(role)
+                paths = accessible_paths_for(role)
                 return self.respond_json({"catalog": read_library_catalog(), "paths": sorted(paths)})
             except (URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
                 return self.respond_json({"error": "persistent_storage_unavailable"}, 503)

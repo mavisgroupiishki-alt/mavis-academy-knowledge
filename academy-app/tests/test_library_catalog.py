@@ -59,6 +59,15 @@ class LibraryCatalogValidationTests(unittest.TestCase):
 
 
 class CourseSourceContractTests(unittest.TestCase):
+    def test_staff_roles_share_library_access_and_test_hub(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("const STAFF_ROLES = ['manager','expert','leader'];", source)
+        self.assertIn("Тесты по базе", source)
+        self.assertIn("function testHub()", source)
+        for role in ("manager", "expert", "leader"):
+            self.assertTrue(server.document_access_for(role, "any-course", "02 PRODUCTS/valid.md"))
+
     def test_reader_controls_expose_the_open_section_and_selected_material(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
