@@ -74,6 +74,11 @@ class CourseSourceContractTests(unittest.TestCase):
             },
             "contacts": {"09 SOP/Важные контакты — органы, экспертиза и обучение.md"},
             "tool-rental": {"09 SOP/Учебный маршрут — аренда инструментов.md"},
+            "product-cert": {
+                "02 PRODUCTS/Чек-лист — СГР и сертификация красок.md",
+                "02 PRODUCTS/Чек-лист — техническое свидетельство и декларация.md",
+            },
+            "bitrix": {"06 BITRIX24/Регламент — работа с делами и воронкой производства.md"},
         }
 
         for course_id, paths in expected.items():
