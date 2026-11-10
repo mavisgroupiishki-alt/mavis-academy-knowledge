@@ -285,8 +285,15 @@ def persistent_state_request(method, key, value=None):
             },
             method="PUT" if method == "POST" else "GET",
         )
-        with urlopen(request, timeout=15) as response:
-            raw = response.read()
+        try:
+            with urlopen(request, timeout=15) as response:
+                raw = response.read()
+        except HTTPError as exc:
+            # Do not include URLs, headers or response bodies: they can contain
+            # storage credentials.  The status is enough to diagnose a remote
+            # state-store configuration problem in the server log.
+            print(f"Academy state store failed: cloudflare HTTP {exc.code}", flush=True)
+            raise
         return json.loads(raw.decode("utf-8")) if raw else {}
 
     function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
