@@ -73,6 +73,7 @@ class CourseSourceContractTests(unittest.TestCase):
                 "03 SALES/Скрипт — получение рекомендаций.md",
             },
             "contacts": {"09 SOP/Важные контакты — органы, экспертиза и обучение.md"},
+            "tool-rental": {"09 SOP/Учебный маршрут — аренда инструментов.md"},
         }
 
         for course_id, paths in expected.items():
@@ -81,6 +82,15 @@ class CourseSourceContractTests(unittest.TestCase):
                 self.assertTrue((server.KNOWLEDGE_ROOT / path).is_file(), path)
 
         self.assertEqual(set(manifest["contacts"]["r"]), {"trainee", "manager", "expert", "leader"})
+
+    def test_tool_rental_route_keeps_the_source_screenshots(self):
+        route = server.KNOWLEDGE_ROOT / "09 SOP/Учебный маршрут — аренда инструментов.md"
+        source = route.read_text(encoding="utf-8")
+
+        for number in range(1, 7):
+            image = f"media/tool-rental-step-{number:02}.png"
+            self.assertIn(image, source)
+            self.assertTrue((server.ROOT / image).is_file(), image)
 
 
 class PersistentStateTransportTests(unittest.TestCase):

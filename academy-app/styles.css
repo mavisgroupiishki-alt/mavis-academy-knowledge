@@ -90,6 +90,7 @@
 .practice-multiple label{display:flex;align-items:flex-start;gap:10px;border:1px solid #d8e5e2;border-radius:11px;background:#fff;padding:11px 13px;color:#385a65;font-size:14px;line-height:1.4;cursor:pointer}.practice-multiple label:has(input:checked){background:#eaf8f2;border-color:#6dc8b2}.practice-multiple input{width:17px;height:17px;accent-color:#167d73;margin:1px 0 0}
 .academy-entry-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.academy-entry-actions .btn{margin:0}
 .course-prose{border:1px solid #e1ebe6;border-radius:14px;background:#fff;padding:16px 19px}.course-prose p{margin:0!important}.course-prose+ .course-prose{margin-top:-5px}.course-prose:has(h3){background:#f0f8f5;border-color:#cce5dc}
+.course-figure{margin:18px 0;padding:10px;border:1px solid #d6e8e1;border-radius:18px;background:#fff;box-shadow:0 7px 18px #123d4b0a}.course-figure img{display:block;width:100%;max-height:430px;object-fit:cover;border-radius:12px;background:#e9f5f0}.course-figure-caption{padding:10px 4px 2px;color:#607b83;font-size:13px;line-height:1.45}@media(max-width:760px){.course-figure{padding:8px}.course-figure img{max-height:250px}}
 .source-rich-editor{min-height:520px;max-height:none}
 
 /* Leader controls keep catalogue maintenance visible without turning the course grid into an editor. */
