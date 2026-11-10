@@ -281,6 +281,7 @@ def persistent_state_request(method, key, value=None):
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
+                "User-Agent": "Mavis-Academy-State/1.0",
                 "X-Academy-State-Token": access_token,
             },
             method="PUT" if method == "POST" else "GET",

@@ -145,6 +145,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(captured["url"], "https://mavis-academy-state.example.workers.dev/state?key=academy%3Alibrary-catalog")
         self.assertEqual(captured["method"], "PUT")
         self.assertEqual(captured["headers"]["X-academy-state-token"], "server-only-token")
+        self.assertEqual(captured["headers"]["User-agent"], "Mavis-Academy-State/1.0")
         self.assertNotIn("server-only-token", captured["url"])
 
 
