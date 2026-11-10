@@ -1,4 +1,5 @@
 import sys
+import json
 import unittest
 from pathlib import Path
 
@@ -54,6 +55,31 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         self.assertEqual(catalog["archived"][0]["id"], "library-custom-restore")
         self.assertEqual(catalog["archived"][0]["sources"], ["02 PRODUCTS/valid.md"])
         self.assertEqual(catalog["archived"][0]["content"], "<p>Собственный текст плитки.</p>")
+
+
+class CourseSourceContractTests(unittest.TestCase):
+    def test_new_working_materials_are_readable_by_their_assigned_roles(self):
+        manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
+
+        expected = {
+            "gpn": {
+                "02 PRODUCTS/Полный чек-лист — Госпромнадзор АХУ, резервуары и сварка.md",
+                "02 PRODUCTS/КП — Госпромнадзор: газ и резервуары.md",
+            },
+            "iso-suot": {"02 PRODUCTS/Шпаргалка — ISO и СУОТ: решение для тендеров.md"},
+            "sales": {
+                "03 SALES/Подсказка — вести звонок к конкретному действию.md",
+                "03 SALES/Скрипт — получение рекомендаций.md",
+            },
+            "contacts": {"09 SOP/Важные контакты — органы, экспертиза и обучение.md"},
+        }
+
+        for course_id, paths in expected.items():
+            self.assertTrue(paths.issubset(set(manifest[course_id]["p"])))
+            for path in paths:
+                self.assertTrue((server.KNOWLEDGE_ROOT / path).is_file(), path)
+
+        self.assertEqual(set(manifest["contacts"]["r"]), {"manager", "expert", "leader"})
 
 
 if __name__ == "__main__":
