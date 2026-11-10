@@ -110,7 +110,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("!isManagerSource(path)", source)
         self.assertIn("Понятие", source)
         self.assertIn("Инструменты и документы", source)
-        self.assertIn("Подсказки для", source)
+        self.assertIn("Ход работы менеджера", source)
+        self.assertNotIn('<a href="#workspace-tips">Подсказки</a>', source)
         self.assertIn("const genericFlow=audience==='manager'", source)
         self.assertIn("Фокус менеджера", source)
         self.assertIn("Фокус эксперта", source)
@@ -137,6 +138,19 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);", source)
         self.assertIn("courseIds:['tr-d1-company','tr-d1-clients','tr-d1-sales-structure','tr-d1-product-map','tr-d1-product-summary']", source)
         self.assertNotIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES, ...TRAINEE_FOUNDATION_COURSES", source)
+
+    def test_trainee_course_reader_is_defined(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("function readerTraineeLegacy(course)", source)
+        self.assertIn("academyCompleteSource('${course.id}',0)", source)
+
+    def test_manager_reader_loads_full_workflow_materials(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("function loadManagerDetailedWorkflow()", source)
+        self.assertIn("managerWorkflowSourcesFor(course)", source)
+        self.assertIn('id="manager-detailed-flow"', source)
 
     def test_each_product_passport_has_a_detailed_expert_flow(self):
         manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
