@@ -79,7 +79,7 @@ class CourseSourceContractTests(unittest.TestCase):
             for path in paths:
                 self.assertTrue((server.KNOWLEDGE_ROOT / path).is_file(), path)
 
-        self.assertEqual(set(manifest["contacts"]["r"]), {"manager", "expert", "leader"})
+        self.assertEqual(set(manifest["contacts"]["r"]), {"trainee", "manager", "expert", "leader"})
 
 
 if __name__ == "__main__":
