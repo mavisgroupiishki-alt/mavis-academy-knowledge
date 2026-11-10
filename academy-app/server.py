@@ -519,13 +519,40 @@ def validate_library_catalog(payload):
     if not isinstance(hidden, list) or not isinstance(overrides, dict) or not isinstance(custom, list) or not isinstance(archived, list):
         raise ValueError("invalid_library_catalog")
     hidden = [str(item) for item in hidden if re.fullmatch(r"[a-z0-9-]{1,80}", str(item))][:80]
+    attachment_kinds = {"document", "spreadsheet", "presentation", "video", "file", "link"}
+
+    def clean_attachments(items):
+        if not isinstance(items, list):
+            return []
+        cleaned = []
+        seen = set()
+        for item in items[:20]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "")).strip()
+            url = str(item.get("url", "")).strip()
+            kind = str(item.get("kind", "link")).strip().lower()
+            parsed = urlparse(url)
+            if (not title or len(title) > 140 or len(url) > 2000
+                    or parsed.scheme != "https" or not parsed.netloc
+                    or kind not in attachment_kinds or url in seen):
+                continue
+            seen.add(url)
+            cleaned.append({"title": title, "url": url, "kind": kind})
+        return cleaned
+
     cleaned_overrides = {}
     for key, value in overrides.items():
         if not re.fullmatch(r"[a-z0-9-]{1,80}", str(key)) or not isinstance(value, dict):
             continue
         title, eyebrow, lead = (str(value.get(name, "")).strip() for name in ("title", "eyebrow", "lead"))
         if title and len(title) <= 140 and len(eyebrow) <= 100 and len(lead) <= 500:
-            cleaned_overrides[str(key)] = {"title": title, "eyebrow": eyebrow, "lead": lead}
+            cleaned_overrides[str(key)] = {
+                "title": title,
+                "eyebrow": eyebrow,
+                "lead": lead,
+                "attachments": clean_attachments(value.get("attachments", [])),
+            }
     def clean_custom_tiles(items):
         cleaned = []
         seen = set()
@@ -549,6 +576,7 @@ def validate_library_catalog(payload):
             # either writes its own content or connects a source.
             cleaned.append({"id": identifier, "title": title, "eyebrow": eyebrow, "lead": lead,
                             "content": content, "sources": selected,
+                            "attachments": clean_attachments(item.get("attachments", [])),
                             "roles": sorted(set(roles or ["leader"]))})
         return cleaned
 

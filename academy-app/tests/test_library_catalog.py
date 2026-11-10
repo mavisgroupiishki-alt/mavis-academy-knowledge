@@ -57,6 +57,36 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         self.assertEqual(catalog["archived"][0]["sources"], ["02 PRODUCTS/valid.md"])
         self.assertEqual(catalog["archived"][0]["content"], "<p>Собственный текст плитки.</p>")
 
+    def test_keeps_only_safe_external_materials_on_tiles(self):
+        catalog = server.validate_library_catalog({
+            "hidden": [],
+            "overrides": {
+                "spk": {
+                    "title": "СПК",
+                    "eyebrow": "Строительство",
+                    "lead": "Полный маршрут",
+                    "attachments": [
+                        {"title": "Рабочая таблица", "url": "https://docs.google.com/spreadsheets/d/example", "kind": "spreadsheet"},
+                        {"title": "Небезопасно", "url": "javascript:alert(1)", "kind": "video"},
+                    ],
+                },
+            },
+            "custom": [{
+                "id": "library-custom-materials",
+                "title": "Материалы",
+                "eyebrow": "Продажи",
+                "lead": "Ссылки для работы",
+                "content": "",
+                "sources": [],
+                "attachments": [{"title": "Видео", "url": "https://example.com/video", "kind": "video"}],
+                "roles": ["manager"],
+            }],
+            "archived": [],
+        })
+
+        self.assertEqual(catalog["overrides"]["spk"]["attachments"], [{"title": "Рабочая таблица", "url": "https://docs.google.com/spreadsheets/d/example", "kind": "spreadsheet"}])
+        self.assertEqual(catalog["custom"][0]["attachments"], [{"title": "Видео", "url": "https://example.com/video", "kind": "video"}])
+
 
 class CourseSourceContractTests(unittest.TestCase):
     def test_staff_roles_share_library_access_and_test_hub(self):
@@ -74,6 +104,15 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn('aria-pressed="${!state.referenceView}"', source)
         self.assertIn('aria-current="${index===selectedIndex?\'page\':\'false\'}"', source)
         self.assertIn("state.readerNotice", source)
+
+    def test_trainee_spk_uses_allowed_source_with_a_readable_fallback(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("'tr-products':'spk'", source)
+        self.assertIn("fallbackContent:course.content", source)
+        self.assertIn("Материал временно недоступен", source)
+        self.assertIn("Внешние материалы", source)
+        self.assertTrue(server.document_access_for("trainee", "spk", "02 PRODUCTS/Учебный маршрут — СПК.md"))
 
     def test_new_working_materials_are_readable_by_their_assigned_roles(self):
         manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
