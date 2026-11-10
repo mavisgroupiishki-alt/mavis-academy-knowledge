@@ -84,7 +84,7 @@ class CourseSourceContractTests(unittest.TestCase):
 
 
 class PersistentStateTransportTests(unittest.TestCase):
-    def test_state_request_uses_server_function_and_never_exposes_access_token_in_url(self):
+    def test_state_request_uses_authenticated_rpc_and_never_exposes_access_token_in_url(self):
         captured = {}
 
         class Response:
@@ -111,9 +111,8 @@ class PersistentStateTransportTests(unittest.TestCase):
             payload = server.persistent_state_request("GET", "academy:library-catalog")
 
         self.assertEqual(payload, {"value": {"custom": []}})
-        self.assertEqual(captured["url"], "https://example.supabase.co/functions/v1/academy-state?key=academy%3Alibrary-catalog")
+        self.assertEqual(captured["url"], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
         self.assertNotIn("server-only-token", captured["url"])
-        self.assertEqual(captured["headers"]["X-academy-state-token"], "server-only-token")
 
 
 if __name__ == "__main__":

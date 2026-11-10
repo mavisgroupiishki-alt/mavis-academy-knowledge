@@ -246,10 +246,10 @@ def results_request(method, path, payload=None):
 def persistent_state_config():
     """Return the server-only connection used for Academy content edits.
 
-    The browser never sees the access token.  The Supabase edge function uses
-    it to authenticate the Academy service before reading or writing one of
-    the explicitly allowlisted state records.  A dedicated state configuration
-    can still be supplied later; the results connection remains the default.
+    The browser never sees the access token.  Supabase RPC functions verify it
+    before reading or writing one of the explicitly allowlisted state records.
+    A dedicated state configuration can still be supplied later; the results
+    connection remains the default.
     """
     url = os.getenv("ACADEMY_STATE_URL", os.getenv("ACADEMY_RESULTS_URL", "")).rstrip("/")
     api_key = os.getenv("ACADEMY_STATE_SERVICE_KEY", os.getenv("ACADEMY_RESULTS_SERVICE_KEY", ""))
@@ -268,18 +268,20 @@ def persistent_state_request(method, key, value=None):
     url, api_key, access_token = persistent_state_config()
     if not url or not api_key or not access_token:
         raise ValueError("state_not_configured")
-    suffix = "?key=" + quote(key, safe="") if method == "GET" else ""
-    body = json.dumps({"key": key, "value": value}, ensure_ascii=False).encode("utf-8") if method == "POST" else None
+    function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
+    payload = {"p_access_token": access_token, "p_key": key}
+    if method == "POST":
+        payload["p_value"] = value
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(
-        url + "/functions/v1/academy-state" + suffix,
+        url + "/rest/v1/rpc/" + function,
         data=body,
         headers={
             "apikey": api_key,
             "Authorization": "Bearer " + api_key,
-            "X-Academy-State-Token": access_token,
             "Content-Type": "application/json",
         },
-        method=method,
+        method="POST",
     )
     with urlopen(request, timeout=15) as response:
         raw = response.read()
