@@ -108,6 +108,9 @@
 .reader-outline>button:hover{background:#f1faf7;border-color:#d8ece5}
 .reader-outline>button.active{background:#e1f3ec;border-color:#afdccc;color:#0f7068;box-shadow:0 7px 14px #0e61500c}
 .reader-outline>button.active span{background:#16847d;color:#fff}
+.reader-outline>button b{flex:1;font-weight:inherit}
+.reader-outline>button small{margin-left:auto;border-radius:999px;padding:3px 7px;background:#cce9df;color:#0f7068;font-size:10px;font-weight:900;white-space:nowrap}
+.reader-selection-notice{margin:0 0 13px;padding:10px 13px;border:1px solid #a8ddcd;border-radius:11px;background:#e8f8f1;color:#0d6f68;font-size:13px;font-weight:800}
 .reader-section-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 13px;padding:5px;border-radius:12px;background:#edf6f2}.reader-section-tabs button{min-height:38px;border:0;border-radius:8px;background:transparent;color:#55747a;font:inherit;font-size:11px;font-weight:900;line-height:1.2;cursor:pointer}.reader-section-tabs button.active{background:#fff;color:#116d68;box-shadow:0 2px 7px #0d4e4912}.reader-section-tabs small{display:block;margin-top:3px;color:inherit;font-size:10px;font-weight:800}.reader-source.reference-source{background:#f7f4ed;border-color:#e7dcc2}.reference-source>span{color:#94713b}
 .reader-source{padding:25px 27px;border-radius:16px;background:#f0faf6}
 .reader-source h2{font-size:clamp(25px,3vw,34px);line-height:1.12}

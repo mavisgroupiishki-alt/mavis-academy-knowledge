@@ -59,6 +59,13 @@ class LibraryCatalogValidationTests(unittest.TestCase):
 
 
 class CourseSourceContractTests(unittest.TestCase):
+    def test_reader_controls_expose_the_open_section_and_selected_material(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn('aria-pressed="${!state.referenceView}"', source)
+        self.assertIn('aria-current="${index===selectedIndex?\'page\':\'false\'}"', source)
+        self.assertIn("state.readerNotice", source)
+
     def test_new_working_materials_are_readable_by_their_assigned_roles(self):
         manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
 
