@@ -455,7 +455,7 @@ def read_document_overrides():
 
 
 def read_library_catalog():
-    default = {"hidden": [], "overrides": {}, "custom": []}
+    default = {"hidden": [], "overrides": {}, "custom": [], "archived": []}
     remote = read_persistent_state("library_catalog")
     if remote is not None:
         value = remote
@@ -473,6 +473,7 @@ def read_library_catalog():
             "hidden": value.get("hidden", []) if isinstance(value.get("hidden"), list) else [],
             "overrides": value.get("overrides", {}) if isinstance(value.get("overrides"), dict) else {},
             "custom": value.get("custom", []) if isinstance(value.get("custom"), list) else [],
+            "archived": value.get("archived", []) if isinstance(value.get("archived"), list) else [],
         }
     except (OSError, json.JSONDecodeError):
         return default
@@ -485,7 +486,8 @@ def validate_library_catalog(payload):
     hidden = payload.get("hidden", [])
     overrides = payload.get("overrides", {})
     custom = payload.get("custom", [])
-    if not isinstance(hidden, list) or not isinstance(overrides, dict) or not isinstance(custom, list):
+    archived = payload.get("archived", [])
+    if not isinstance(hidden, list) or not isinstance(overrides, dict) or not isinstance(custom, list) or not isinstance(archived, list):
         raise ValueError("invalid_library_catalog")
     hidden = [str(item) for item in hidden if re.fullmatch(r"[a-z0-9-]{1,80}", str(item))][:80]
     cleaned_overrides = {}
@@ -495,21 +497,36 @@ def validate_library_catalog(payload):
         title, eyebrow, lead = (str(value.get(name, "")).strip() for name in ("title", "eyebrow", "lead"))
         if title and len(title) <= 140 and len(eyebrow) <= 100 and len(lead) <= 500:
             cleaned_overrides[str(key)] = {"title": title, "eyebrow": eyebrow, "lead": lead}
-    cleaned_custom = []
-    for item in custom[:80]:
-        if not isinstance(item, dict):
-            continue
-        identifier = str(item.get("id", ""))
-        title, eyebrow, lead = (str(item.get(name, "")).strip() for name in ("title", "eyebrow", "lead"))
-        paths = item.get("sources", [])
-        if (not re.fullmatch(r"library-custom-[a-z0-9-]{1,80}", identifier) or not title or len(title) > 140
-                or len(eyebrow) > 100 or len(lead) > 500 or not isinstance(paths, list)):
-            continue
-        selected = [str(path) for path in paths if str(path) in source_paths][:25]
-        roles = [role for role in item.get("roles", ["leader"]) if role in {"manager", "expert", "leader"}]
-        if selected:
-            cleaned_custom.append({"id": identifier, "title": title, "eyebrow": eyebrow, "lead": lead, "sources": selected, "roles": sorted(set(roles or ["leader"]))})
-    return {"hidden": sorted(set(hidden)), "overrides": cleaned_overrides, "custom": cleaned_custom}
+    def clean_custom_tiles(items):
+        cleaned = []
+        seen = set()
+        for item in items[:80]:
+            if not isinstance(item, dict):
+                continue
+            identifier = str(item.get("id", ""))
+            title, eyebrow, lead = (str(item.get(name, "")).strip() for name in ("title", "eyebrow", "lead"))
+            content = str(item.get("content", ""))
+            paths = item.get("sources", [])
+            if (identifier in seen or not re.fullmatch(r"library-custom-[a-z0-9-]{1,80}", identifier)
+                    or len(title) > 140 or len(eyebrow) > 100 or len(lead) > 500
+                    or len(content) > MAX_KNOWLEDGE_DOCUMENT_BYTES or not is_safe_rich_text(content)
+                    or not isinstance(paths, list)):
+                continue
+            seen.add(identifier)
+            selected = [str(path) for path in paths if str(path) in source_paths][:25]
+            roles = [role for role in item.get("roles", ["leader"]) if role in {"manager", "expert", "leader"}]
+            # A custom tile may be a completely blank draft. It stays private
+            # to the catalogue editor until the leader gives it a title and
+            # either writes its own content or connects a source.
+            cleaned.append({"id": identifier, "title": title, "eyebrow": eyebrow, "lead": lead,
+                            "content": content, "sources": selected,
+                            "roles": sorted(set(roles or ["leader"]))})
+        return cleaned
+
+    archived_ids = {str(item.get("id", "")) for item in archived if isinstance(item, dict)}
+    cleaned_custom = [item for item in clean_custom_tiles(custom) if item["id"] not in archived_ids]
+    cleaned_archived = clean_custom_tiles(archived)
+    return {"hidden": sorted(set(hidden)), "overrides": cleaned_overrides, "custom": cleaned_custom, "archived": cleaned_archived}
 
 
 def validate_document_override(payload):
@@ -583,6 +600,10 @@ def custom_course_access(course_id):
     for item in catalog.get("custom", []):
         if isinstance(item, dict) and item.get("id") == course_id:
             paths = {path for path in item.get("sources", []) if is_safe_knowledge_path(path)}
+            title = str(item.get("title", "")).strip()
+            own_text = re.sub(r"<[^>]+>", " ", str(item.get("content", ""))).replace("&nbsp;", " ").strip()
+            if not title or not (paths or own_text):
+                return None
             roles = {role for role in item.get("roles", ["leader"]) if role in {"manager", "expert", "leader"}}
             return {"roles": roles or {"leader"}, "paths": paths, "all": False}
     return None
@@ -616,7 +637,9 @@ def accessible_paths_for(role):
     if role in {"manager", "expert", "leader"}:
         for item in catalog.get("custom", []):
             custom_roles = set(item.get("roles", ["leader"])) if isinstance(item, dict) else set()
-            if isinstance(item, dict) and role in custom_roles:
+            title = str(item.get("title", "")).strip() if isinstance(item, dict) else ""
+            own_text = re.sub(r"<[^>]+>", " ", str(item.get("content", ""))).replace("&nbsp;", " ").strip() if isinstance(item, dict) else ""
+            if isinstance(item, dict) and title and ((item.get("sources") or []) or own_text) and role in custom_roles:
                 paths.update(path for path in item.get("sources", []) if is_safe_knowledge_path(path))
     return paths
 

@@ -135,10 +135,12 @@
   // The full base is an ordinary, read-only tile for every role.  Leader-only
   // controls are still protected by role checks in the UI and server.
   const baseLibraryCourses=()=>COURSES;
+  const libraryTileText=tile=>String(tile?.content||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').trim();
+  const isPublishedLibraryTile=tile=>Boolean(String(tile?.title||'').trim()&&((tile?.sources||[]).length||libraryTileText(tile)));
   const libraryCourses=()=>{
-    const catalog=state.libraryCatalog||{hidden:[],overrides:{},custom:[]}, hidden=new Set(catalog.hidden||[]), overrides=catalog.overrides||{};
+    const catalog=state.libraryCatalog||{hidden:[],overrides:{},custom:[],archived:[]}, hidden=new Set(catalog.hidden||[]), overrides=catalog.overrides||{};
     const role=access?.role||state.role, permitted=course=>role==='leader'||!course.roles||course.roles.includes(role);
-    return [...baseLibraryCourses().filter(course=>!hidden.has(course.id)&&permitted(course)).map(course=>({...course,...(overrides[course.id]||{})})),...(catalog.custom||[]).filter(permitted).map(course=>({icon:'▤',color:'teal',roles:['leader'],check:DEFAULT_CUSTOM_CHECK,...course}))];
+    return [...(catalog.custom||[]).filter(course=>isPublishedLibraryTile(course)&&permitted(course)).map(course=>({icon:'▤',color:'teal',roles:['leader'],check:DEFAULT_CUSTOM_CHECK,...course})),...baseLibraryCourses().filter(course=>!hidden.has(course.id)&&permitted(course)).map(course=>({...course,...(overrides[course.id]||{})}))];
   };
   const coursesFor = () => {
     const role = access?.role || state.role;
@@ -432,7 +434,7 @@
     const cards = trainee ? dayCourses.flatMap(course=>course.sources.map((path,index)=>lessonCard(course,path,index))) : list.map(courseCard);
     const reviewCards = reviewCourses.flatMap(course=>course.sources.map((path,index)=>lessonCard(course,path,index,'review')));
     const dayAction = !trainee ? `<section class="course-toolbar"><div><h2>Поиск по базе</h2><p>Ищет в названии плитки и внутри всех подключённых материалов.</p></div><input class="academy-tile-search" value="${esc(state.catalogQuery)}" placeholder="Госпромнадзор, договор, сварщик…" oninput="academySearchTiles(this.value)"></section>` : state.traineeDay===3 ? `${callTrainingPanel()}<section class="trainee-day-action"><span>ДЕНЬ 04 · ФИНАЛ</span><h2>Разбор звонков и итоговая аттестация</h2><p>Сначала послушайте примеры и сравните диагностику, пользу и договорённость. Затем откройте один итоговый тест.</p><button class="reader-test" onclick="academyFinalExam()">Начать итоговый тест →</button></section>` : '';
-    const catalogEditor = leader ? `<section class="catalog-editor-banner"><div><span>РУКОВОДИТЕЛЬ · УПРАВЛЕНИЕ БАЗОЙ</span><h2>Создавайте и убирайте плитки прямо из каталога</h2><p>Новая плитка добавляется в базу после выбора материалов и сохранения. Готовую плитку можно убрать из каталога без удаления исходных материалов.</p></div><div><button class="reader-test" onclick="academyCreateLibraryTile()">＋ Создать плитку</button><button class="reader-complete" onclick="academyLibraryEditor()">Управлять плитками</button></div></section>` : '';
+    const catalogEditor = leader ? `<section class="catalog-editor-banner"><div><span>РУКОВОДИТЕЛЬ · УПРАВЛЕНИЕ БАЗОЙ</span><h2>Создавайте и убирайте плитки прямо из каталога</h2><p>Новая плитка открывается пустым черновиком: без раздела и материала. Добавляйте текст и источники только тогда, когда они нужны.</p></div><div><button class="reader-test" onclick="academyCreateLibraryTile()">＋ Создать пустую плитку</button><button class="reader-complete" onclick="academyLibraryEditor()">Управлять плитками</button></div></section>` : '';
     const standardCards=trainee?cards:list.map(courseCard);
     return shell(`<header class="product-hero"><div><span>ВАШЕ ОБУЧЕНИЕ · ${esc(roleName(access?.role || state.role).toUpperCase())}</span><h1>${trainee?`День ${String(state.traineeDay+1).padStart(2,'0')} · ${esc(day.title)}`:'Не навигатор.\x3cbr>Настоящая база знаний.'}</h1><p>${trainee?esc(day.intro):'Выберите продукт или процесс: читайте учебный материал внутри Academy, закрепляйте его в заданиях и отмечайте тему изученной.'}</p></div><div class="product-hero-note"><b>${trainee?state.traineeDay+1:list.length}</b><span>${trainee?'день из 4':'учебных маршрутов'}</span><small>${trainee?'откройте карточку дня выше':'только полезные материалы'}</small></div></header>${trainee?traineePlan():''}<section class="course-summary"><span><b>${totalDone()}</b> изучено</span><span><b>${trainee?dayCourses.reduce((n,c)=>n+c.sources.length,0)+reviewCourses.reduce((n,c)=>n+c.sources.length,0):list.reduce((n,c)=>n+c.sources.length,0)}</b> материалов в этом разделе</span><span><b>3</b> формата практики в каждой теме</span></section>${catalogEditor}${dayAction}${reviewCards.length?`<section class="course-toolbar course-toolbar-review"><div><h2>Повторить</h2><p>Материалы первого дня для закрепления перед новыми темами.</p></div></section><section class="course-grid course-grid-review">${reviewCards.join('')}</section>`:''}<section class="course-toolbar"><div><h2>${trainee?'Изучить':'Продукты и процессы'}</h2><p>${trainee?'Новые материалы выбранного дня: откройте, изучите и отметьте их.':'Полезные учебные маршруты: продукты, продажи, экспертиза, CRM и регламенты.'}</p></div><button class="course-ai-button" onclick="academyAsk()">✦ Помощник по базе знаний</button></section>${standardCards.length?`<section class="course-grid">${standardCards.join('')}</section>`:''}`);
   }
@@ -511,6 +513,38 @@
   }
   function curriculumEditor(){return shell(`<button class="course-back" onclick="academyLeaderResults()">← Стажёры и результаты</button><section class="leader-results curriculum-editor"><span>РУКОВОДИТЕЛЬ · РЕДАКТОР СТАЖИРОВКИ</span><h1>Плитки и материалы стажёра</h1><p>Здесь можно добавлять, переименовывать, перемещать, объединять и удалять плитки. Текст редактируется прямо как документ: выделите фрагмент и примените форматирование.</p><div class="curriculum-list">${traineeCourses.map((course,index)=>`<article data-course-index="${index}"><div class="tile-editor-head"><b>Плитка ${index+1}</b><div><button type="button" onclick="academyMoveTileInCurriculum(${index},-1)">↑ Выше</button><button type="button" onclick="academyMoveTileInCurriculum(${index},1)">↓ Ниже</button></div></div><label>Название<input data-field="title" data-index="${index}" value="${esc(course.title)}"></label><label>Краткое описание<textarea data-field="lead" data-index="${index}">${esc(course.lead)}</textarea></label><label>Материал</label><div class="rich-editor-toolbar" aria-label="Форматирование текста"><button type="button" onmousedown="event.preventDefault();academyFormatText('bold')"><b>Ж</b></button><button type="button" onmousedown="event.preventDefault();academyFormatText('italic')"><i>К</i></button><button type="button" onmousedown="event.preventDefault();academyFormatText('underline')"><u>Ч</u></button><button type="button" onmousedown="event.preventDefault();academyFormatText('insertUnorderedList')">• Список</button><button type="button" onmousedown="event.preventDefault();academyFormatText('formatBlock','h3')">Заголовок</button><input aria-label="Цвет выделенного текста" type="color" value="#087f76" oninput="academyFormatText('foreColor',this.value)"></div><div class="rich-editor" contenteditable="true" data-field="content" data-index="${index}">${safeRichHtml(course.content)}</div><label>День<select data-field="day" data-index="${index}">${traineeDays.map((day,dayIndex)=>`<option value="${dayIndex}" ${day.courseIds.includes(course.id)?'selected':''}>День ${dayIndex+1}: ${esc(day.title)}</option>`).join('')}</select></label><div class="tile-editor-actions"><label>Объединить с<select data-merge-target="${index}"><option value="">Выберите плитку</option>${traineeCourses.filter(item=>item.id!==course.id).map(item=>`<option value="${esc(item.id)}">${esc(item.title)}</option>`).join('')}</select></label><button class="reader-complete" type="button" onclick="academyMergeTile(${index})">Объединить</button><button class="reader-complete danger" type="button" onclick="academyRemoveTile(${index})">Удалить плитку</button></div></article>`).join('')}</div><div class="editor-actions"><button class="reader-complete" onclick="academyAddTile()">+ Добавить плитку</button><button class="reader-test" ${state.curriculumSaving?'disabled':''} onclick="academySaveCurriculum()">${state.curriculumSaving?'Сохраняю…':'Сохранить изменения'}</button></div>${state.curriculumError?`<p class="exam-error">${esc(state.curriculumError)}</p>`:''}</section>`)}
   function libraryEditor(){const catalog=state.libraryCatalog||{hidden:[],overrides:{},custom:[]}, hidden=new Set(catalog.hidden||[]), sources=editableSources(), tiles=[...baseLibraryCourses().map(course=>({...course,custom:false,hidden:hidden.has(course.id),...(catalog.overrides?.[course.id]||{})})),...(catalog.custom||[]).map(course=>({...course,custom:true}))];return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results curriculum-editor"><span>РУКОВОДИТЕЛЬ · КАТАЛОГ БАЗЫ</span><h1>Плитки базы знаний</h1><p>В каталоге оставляйте только полезные маршруты: регламенты, чек-листы, инструкции и рабочие материалы. Создайте свою плитку, выберите для неё материалы и сохраните каталог.</p><section class="library-editor-quick"><div><b>Нужна новая тема?</b><p>Добавьте плитку, заполните название и описание, затем выберите хотя бы один материал. Новая плитка будет доступна руководителю, менеджеру и эксперту.</p></div><button class="reader-test" type="button" onclick="academyAddLibraryTile()">＋ Создать плитку</button></section><div class="curriculum-list">${tiles.filter(tile=>!tile.hidden).map(tile=>`<article data-library-tile="${esc(tile.id)}"><div class="tile-editor-head"><b>${tile.custom?'Новая плитка':'Готовая плитка'}</b><button class="reader-complete danger" type="button" onclick="academyRemoveLibraryTile('${esc(tile.id)}',${tile.custom})">${tile.custom?'Удалить плитку':'Убрать из каталога'}</button></div><label>Название<input data-library-field="title" value="${esc(tile.title)}"></label><label>Раздел<input data-library-field="eyebrow" value="${esc(tile.eyebrow)}"></label><label>Описание<textarea data-library-field="lead">${esc(tile.lead)}</textarea></label>${tile.custom?`<label>Материалы плитки<select data-library-field="sources" multiple size="8">${sources.map(path=>`<option value="${esc(path)}" ${(tile.sources||[]).includes(path)?'selected':''}>${esc(sourceTitle(path))}</option>`).join('')}</select></label><small>Выберите один или несколько полезных материалов. Удерживайте Cmd/Ctrl для выбора нескольких.</small>`:`<small>${tile.sources.length} подключённых материалов. Состав готовой плитки сохраняет рабочую структуру.</small>`}</article>`).join('')}</div>${hidden.size?`<section class="course-toolbar"><div><h2>Скрытые плитки</h2><p>Исходные материалы не удаляются — плитку можно вернуть в каталог.</p></div></section><div class="leader-results-list">${baseLibraryCourses().filter(course=>hidden.has(course.id)).map(course=>`<article class="leader-result-card"><div><span>СКРЫТА</span><b>${esc(course.title)}</b></div><button class="reader-complete" onclick="academyRestoreLibraryTile('${course.id}')">Вернуть</button></article>`).join('')}</div>`:''}<div class="editor-actions"><button class="reader-complete" onclick="academyAddLibraryTile()">＋ Создать плитку</button><button class="reader-test" ${state.librarySaving?'disabled':''} onclick="academySaveLibraryCatalog()">${state.librarySaving?'Сохраняю…':'Сохранить изменения'}</button></div>${state.libraryError?`<p class="exam-error">${esc(state.libraryError)}</p>`:''}</section>`)}
+  function reader(){
+    const course=current();if(!course)return catalog();
+    const ownsOnlyText=Boolean(course.content&&!(course.sources||[]).length);
+    const passportIndexes=ownsOnlyText?[]:sourceIndexesFor(course,true), learningIndexes=ownsOnlyText?[]:sourceIndexesFor(course,false);
+    const visibleIndexes=state.referenceView&&passportIndexes.length?passportIndexes:learningIndexes;
+    const {index:selectedIndex,path:selected}=selectedSourceFor(course);
+    const trainee=(access?.role||state.role)==='trainee', completed=trainee?lessonDone(course,selectedIndex):done(course);
+    const completeAction=trainee?`academyCompleteSource('${course.id}',${selectedIndex})`:`academyComplete('${course.id}')`;
+    const mvdDownload=course.id==='licences'?'<section class="course-download"><div><span>АКТУАЛЬНАЯ ФОРМА МВД</span><h2>Запрос в ИЦ УВД Бреста</h2><p>Образец формы добавлен в материалы по лицензии МВД. Скачайте его перед подготовкой запроса.</p></div><a href="media/mvd-request-form.pdf" download="Форма-запроса-ИЦ-УВД-Бреста.pdf">Скачать PDF ↓</a></section>':'';
+    const sectionTabs=passportIndexes.length?`<div class="reader-section-tabs"><button class="${state.referenceView?'':'active'}" onclick="academyReaderSection('learning')">Учебный маршрут <small>${learningIndexes.length}</small></button><button class="${state.referenceView?'active':''}" onclick="academyReaderSection('reference')">Справочник по продукту <small>${passportIndexes.length}</small></button></div>`:'';
+    const intro=ownsOnlyText?`<div class="reader-source"><span>СОБСТВЕННЫЙ УЧЕБНЫЙ МАТЕРИАЛ</span><h2>${esc(course.title)}</h2><p>Материал создан прямо в Academy. Руководитель может вернуться в редактор плитки и изменить его.</p></div>`:state.referenceView?`<div class="reader-source reference-source"><span>СПРАВОЧНИК · СТРУКТУРИРОВАНО</span><h2>${esc(sourceTitle(selected))}</h2><p>Здесь данные паспорта сгруппированы по темам и раскрываются по необходимости: не сырая таблица, а рабочий справочник для сверки деталей.</p></div>`:`${courseBrief(course)}${gpnContacts(course)}<div class="reader-source"><span>УЧЕБНЫЙ РАЗДЕЛ ${visibleIndexes.indexOf(selectedIndex)+1} ИЗ ${visibleIndexes.length}</span><h2>${esc(sourceTitle(selected))}</h2><p>${course.id.startsWith('tr-')?'Полный материал из общей базы: термины, порядок действий, примеры и границы обещаний.':'Учебный материал Academy: без технических ссылок и дубликатов.'}</p></div>`;
+    const inlineEditing=access?.role==='leader'&&state.inlineEditorPath===selected;
+    const authoredContent=course.content?`<section class="course-document custom-tile-document">${safeRichHtml(course.content)}</section>`:'';
+    const documentPane=ownsOnlyText?'':inlineEditing?inlineMaterialEditor(course,selected):'<div id="course-document" class="course-document"><div class="course-loading"><b>Готовлю материал…</b><span>Основные правила, примеры и условия откроются здесь.</span></div></div>';
+    const editAction=access?.role==='leader'?'<button class="reader-edit" onclick="academyEditOpenedMaterial()">✎ Редактировать</button>':'';
+    const outline=ownsOnlyText?'<div class="reader-own-text-note"><b>Собственная инструкция</b><p>В этой плитке нет подключённых разделов: текст ниже — весь материал темы.</p></div>':`${sectionTabs}${visibleIndexes.map((index,position)=>`<button class="${index===selectedIndex?'active':''}" onclick="academySource(${index})"><span>${String(position+1).padStart(2,'0')}</span>${esc(sourceTitle(course.sources[index]))}</button>`).join('')}`;
+    return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><header class="reader-head"><div><span>${esc(course.eyebrow||'СОБСТВЕННАЯ ТЕМА')}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1><p>${esc(course.lead||'Учебный материал Academy.')}</p></div><div class="reader-actions">${editAction}<button class="reader-presentation" onclick="academyPresentation('${course.id}')">Открыть презентацию</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику</button><button class="reader-complete ${completed?'is-done':''}" onclick="${completeAction}">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header>${mvdDownload}${['sales','tr-calls'].includes(course.id)?callTrainingPanel():''}<section class="reader-layout"><aside class="reader-outline"><b>${ownsOnlyText?'Материал темы':state.referenceView?'Справочник по продукту':'Разделы темы'}</b><p>${ownsOnlyText?'Один собственный текст без подключённых документов.':state.referenceView?'Структурированные данные паспорта: открывайте раздел только для сверки конкретной детали.':'Выберите раздел — откроется учебный материал.'}</p>${outline}<div class="reader-practice"><span>После чтения</span><b>Пройдите кейс, сопоставление и порядок действий.</b><button onclick="academyTest('${course.id}')">Открыть практику →</button></div></aside><article class="reader-content">${intro}${course.deck&&!state.referenceView&&selectedIndex===0?renderDeck():''}${authoredContent}${documentPane}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" onclick="${completeAction}">${completed?'✓ Материал изучен':'✓ Я изучил(а) этот материал'}</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику →</button></div></article></section>`);
+  }
+  function libraryEditor(){
+    const catalog=ensureLibraryCatalog(), hidden=new Set(catalog.hidden), sources=editableSources(), archived=catalog.archived;
+    const customCards=catalog.custom.map(tile=>libraryTileEditor(tile,sources));
+    const stockCards=baseLibraryCourses().filter(course=>!hidden.has(course.id)).map(course=>libraryStockTileEditor({...course,...(catalog.overrides[course.id]||{})}));
+    const hiddenCards=baseLibraryCourses().filter(course=>hidden.has(course.id)).map(course=>`<article class="leader-result-card"><div><span>СКРЫТАЯ ГОТОВАЯ ПЛИТКА</span><b>${esc(course.title)}</b><small>Исходные материалы не удалены.</small></div><button class="reader-complete" type="button" onclick="academyRestoreLibraryTile('${course.id}')">Вернуть</button></article>`).join('');
+    const archivedCards=archived.map(tile=>`<article class="leader-result-card"><div><span>УДАЛЁННАЯ ПЛИТКА</span><b>${esc(tile.title||'Без названия')}</b><small>${(tile.sources||[]).length?`${tile.sources.length} материал(а) сохранено`:'Материалов пока нет'}</small></div><button class="reader-complete" type="button" onclick="academyRestoreArchivedLibraryTile('${esc(tile.id)}')">Вернуть</button></article>`).join('');
+    return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results curriculum-editor"><span>РУКОВОДИТЕЛЬ · КАТАЛОГ БАЗЫ</span><h1>Плитки базы знаний</h1><p>Создавайте только полезные темы: регламенты, чек-листы, инструкции и рабочие материалы. Новая плитка начинается пустым черновиком — название, текст и источники задаёте вы.</p><section class="library-editor-quick"><div><b>Новая пустая плитка</b><p>Она не попадёт в общую базу, пока не появятся название и либо ваш текст, либо хотя бы один подключённый материал.</p></div><button class="reader-test" type="button" onclick="academyAddLibraryTile()">＋ Создать пустую плитку</button></section><section class="library-editor-group"><div class="course-toolbar"><div><h2>Ваши плитки</h2><p>Сверху — черновики и созданные вами темы. У каждой можно добавлять и убирать подключённые материалы.</p></div></div><div class="curriculum-list library-custom-list">${customCards||'<p class="library-empty-state">Создайте первую пустую плитку — готовых разделов в ней не будет.</p>'}</div></section><section class="library-editor-group"><div class="course-toolbar"><div><h2>Готовые плитки</h2><p>Их можно переименовать или временно убрать из каталога. Состав исходных материалов остаётся неизменным.</p></div></div><div class="curriculum-list">${stockCards}</div></section>${hiddenCards||archivedCards?`<section class="library-trash"><div class="course-toolbar"><div><h2>Корзина</h2><p>Удалённые и скрытые плитки не пропадают. Верните любую одним нажатием.</p></div></div><div class="leader-results-list">${hiddenCards}${archivedCards}</div></section>`:''}<div class="editor-actions"><button class="reader-complete" type="button" onclick="academyAddLibraryTile()">＋ Создать пустую плитку</button><button class="reader-test" ${state.librarySaving?'disabled':''} onclick="academySaveLibraryCatalog()">${state.librarySaving?'Сохраняю…':'Сохранить изменения'}</button></div>${state.libraryError?`<p class="exam-error">${esc(state.libraryError)}</p>`:''}</section>`);
+  }
+  function libraryTileEditor(tile,sources){
+    const isDraft=!isPublishedLibraryTile(tile), selected=tile.sources||[], available=sources.filter(path=>!selected.includes(path));
+    const materialChips=selected.length?`<div class="library-source-chips">${selected.map(path=>`<span>${esc(sourceTitle(path))}<button type="button" aria-label="Убрать материал ${esc(sourceTitle(path))}" onclick="academyRemoveLibrarySource('${esc(tile.id)}','${encodeURIComponent(path)}')">×</button></span>`).join('')}</div>`:'<p class="library-no-sources">Материалов пока нет. Это нормально: можно написать свой текст или добавить источник ниже.</p>';
+    return `<article class="library-custom-tile ${isDraft?'is-draft':''}" data-library-tile="${esc(tile.id)}"><div class="tile-editor-head"><div><b>${isDraft?'Черновик · не виден сотрудникам':'Созданная плитка'}</b><small>${isDraft?'Заполните только то, что нужно для этой темы.':'Видна менеджеру, эксперту и руководителю.'}</small></div><button class="reader-complete danger" type="button" onclick="academyRemoveLibraryTile('${esc(tile.id)}',true)">Удалить в корзину</button></div><div class="library-tile-fields"><label>Название<input data-library-field="title" value="${esc(tile.title||'')}" placeholder="Например, Регламент партнёров"></label><label>Раздел<input data-library-field="eyebrow" value="${esc(tile.eyebrow||'')}" placeholder="Например, Продажи"></label></div><label>Краткое описание<textarea data-library-field="lead" placeholder="Кому и зачем нужен этот материал.">${esc(tile.lead||'')}</textarea></label><section class="library-source-manager"><div><b>Подключённые материалы</b><p>Добавляйте материалы из базы по одному. Удаление здесь не удаляет сам документ из базы.</p></div>${materialChips}<label class="library-source-add">Добавить материал<select onchange="academyAddLibrarySource('${esc(tile.id)}',this.value)"><option value="">Выберите материал…</option>${available.map(path=>`<option value="${esc(path)}">${esc(sourceTitle(path))}</option>`).join('')}</select></label></section><section class="library-own-text"><div><b>Собственный текст плитки</b><p>Необязательно подключать документ: напишите инструкцию прямо здесь и оформите её как в Word.</p></div><div class="rich-editor-toolbar" aria-label="Форматирование текста плитки"><button type="button" onmousedown="event.preventDefault();academyFormatText('bold')"><b>Ж</b></button><button type="button" onmousedown="event.preventDefault();academyFormatText('italic')"><i>К</i></button><button type="button" onmousedown="event.preventDefault();academyFormatText('underline')"><u>Ч</u></button><button type="button" onmousedown="event.preventDefault();academyFormatText('insertUnorderedList')">• Список</button><button type="button" onmousedown="event.preventDefault();academyFormatText('formatBlock','h3')">Заголовок</button><input aria-label="Цвет выделенного текста" type="color" value="#087f76" oninput="academyFormatText('foreColor',this.value)"></div><div class="rich-editor library-rich-editor" contenteditable="true" data-library-field="content" data-placeholder="Напишите учебный текст, добавьте этапы, таблицу или чек-лист…">${safeRichHtml(tile.content||'')}</div></section></article>`;
+  }
+  function libraryStockTileEditor(tile){return `<article data-library-tile="${esc(tile.id)}"><div class="tile-editor-head"><div><b>Готовая плитка</b><small>Исходные материалы закреплены в учебной структуре.</small></div><button class="reader-complete danger" type="button" onclick="academyRemoveLibraryTile('${esc(tile.id)}',false)">Убрать в корзину</button></div><label>Название<input data-library-field="title" value="${esc(tile.title)}"></label><label>Раздел<input data-library-field="eyebrow" value="${esc(tile.eyebrow)}"></label><label>Описание<textarea data-library-field="lead">${esc(tile.lead)}</textarea></label><small>${tile.sources.length} подключённых материалов. Чтобы создать отдельную тему — используйте пустую плитку выше.</small></article>`;}
   const editableSources=()=>[...new Set([...baseLibraryCourses().flatMap(course=>course.sources),...FULL_LIBRARY_EXTRA_SOURCES,...state.librarySourcePaths])];
   function sourceEditor(){const paths=editableSources(),path=state.sourceEditorPath||paths[0]||'';return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results curriculum-editor"><span>РУКОВОДИТЕЛЬ · РЕДАКТОР БАЗЫ ЗНАНИЙ</span><h1>Редактор материалов</h1><p>Ниже — исходные материалы, а не плитки каталога. Ищите по названию и открывайте нужный документ: поле не перерисовывается при наборе, поэтому курсор остаётся на месте.</p><label>Найти материал<input class="academy-source-search" placeholder="Например: МЧС, металл, договор…" oninput="academyFilterSourceEditor(this)"></label><div class="academy-source-picker" aria-label="Исходные материалы">${paths.map(item=>`<button type="button" data-source-picker="${esc((sourceTitle(item)+' '+item).toLocaleLowerCase('ru'))}" class="${item===path?'active':''}" onclick="academySelectSourceEditor('${esc(item)}')"><small>${esc(item.split('/')[0])}</small><b>${esc(sourceTitle(item))}</b></button>`).join('')}</div><div class="rich-editor-toolbar" aria-label="Форматирование текста"><button type="button" onmousedown="event.preventDefault();academyFormatText('bold')"><b>Ж</b></button><button type="button" onmousedown="event.preventDefault();academyFormatText('italic')"><i>К</i></button><button type="button" onmousedown="event.preventDefault();academyFormatText('underline')"><u>Ч</u></button><button type="button" onmousedown="event.preventDefault();academyFormatText('insertUnorderedList')">• Список</button><button type="button" onmousedown="event.preventDefault();academyFormatText('formatBlock','h3')">Заголовок</button><input aria-label="Цвет выделенного текста" type="color" value="#087f76" oninput="academyFormatText('foreColor',this.value)"></div><div id="source-rich-editor" class="rich-editor source-rich-editor" contenteditable="true">${state.sourceEditorLoading?'<p>Загружаю материал…</p>':safeRichHtml(state.sourceEditorHtml)}</div><div class="editor-actions"><button class="reader-test" ${state.sourceEditorSaving||state.sourceEditorLoading?'disabled':''} onclick="academySaveSourceEditor()">${state.sourceEditorSaving?'Сохраняю…':'Сохранить материал'}</button></div>${state.sourceEditorError?`<p class="exam-error">${esc(state.sourceEditorError)}</p>`:''}</section>`)}
   function bindLibraryAutosave(){const editor=document.querySelector('.curriculum-editor');if(!editor)return;const queue=event=>{if(event.target?.matches('[data-library-field]'))window.academyQueueLibrarySave();};editor.oninput=queue;editor.onchange=queue;}
@@ -525,7 +559,7 @@
     const {index,path}=selectedSourceFor(course), requestId=++state.documentRequestId;
     if(state.inlineEditorPath===path)return;
     const target=document.getElementById('course-document'); if (!target) return;
-    if(course.content){target.innerHTML=safeRichHtml(course.content);return;}
+    if(course.content&&!(course.sources||[]).length){target.innerHTML=safeRichHtml(course.content);return;}
     const isCurrent=()=>requestId===state.documentRequestId&&state.page==='course'&&state.course===course.id&&state.tab===index;
     try { const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()}); if(response.status===401){ state.login=true; access=null; sessionStorage.removeItem(accessKey); return render(); } if(!response.ok) throw Error(); const data=await response.json(); if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) currentTarget.innerHTML=readableDocument(data,path,state.referenceView); } }
     catch (_) { if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) currentTarget.innerHTML='<div class="course-error"><b>Не удалось открыть материал.</b><span>Попробуйте загрузить его ещё раз. Если ошибка повторится, сообщите руководителю название раздела.</span><button onclick="academyReloadCourse()">Загрузить снова</button></div>'; } }
@@ -585,6 +619,125 @@
   window.academyRemoveLibraryTile=(id,custom)=>{syncLibraryEditor();if(custom)state.libraryCatalog.custom=state.libraryCatalog.custom.filter(tile=>tile.id!==id);else if(!state.libraryCatalog.hidden.includes(id))state.libraryCatalog.hidden.push(id);render();window.academyPersistLibraryCatalog(true);};
   window.academyRestoreLibraryTile=id=>{state.libraryCatalog.hidden=state.libraryCatalog.hidden.filter(item=>item!==id);render();window.academyPersistLibraryCatalog(true);};
   window.academySaveLibraryCatalog=()=>window.academyPersistLibraryCatalog(true);
+  function ensureLibraryCatalog(){
+    const catalog=state.libraryCatalog||{};
+    catalog.hidden=Array.isArray(catalog.hidden)?catalog.hidden:[];
+    catalog.overrides=catalog.overrides&&typeof catalog.overrides==='object'?catalog.overrides:{};
+    catalog.custom=Array.isArray(catalog.custom)?catalog.custom:[];
+    catalog.archived=Array.isArray(catalog.archived)?catalog.archived:[];
+    state.libraryCatalog=catalog;
+    return catalog;
+  }
+  function syncLibraryEditor(){
+    const catalog=ensureLibraryCatalog();
+    document.querySelectorAll('[data-library-tile]').forEach(node=>{
+      const id=node.dataset.libraryTile;
+      const fields=Object.fromEntries([...node.querySelectorAll('[data-library-field]')].map(field=>[
+        field.dataset.libraryField,
+        field.isContentEditable?safeRichHtml(field.innerHTML):field.multiple?[...field.selectedOptions].map(option=>option.value):field.value.trim()
+      ]));
+      const custom=catalog.custom.find(tile=>tile.id===id);
+      if(custom)Object.assign(custom,fields);
+      else catalog.overrides[id]={title:fields.title,eyebrow:fields.eyebrow,lead:fields.lead};
+    });
+  }
+  const blankLibraryTile=()=>({id:`library-custom-${Date.now().toString(36)}`,icon:'▤',color:'teal',title:'',eyebrow:'',lead:'',content:'',sources:[],roles:['manager','expert','leader']});
+  function focusLibraryTile(id){requestAnimationFrame(()=>{const field=document.querySelector(`[data-library-tile="${id}"] [data-library-field="title"]`);if(field){field.focus();field.select?.();}});}
+  window.academyCreateLibraryTile=()=>window.academyAddLibraryTile();
+  window.academyAddLibraryTile=()=>{
+    if(access?.role!=='leader')return;
+    syncLibraryEditor();
+    const catalog=ensureLibraryCatalog(), tile=blankLibraryTile();
+    catalog.custom.unshift(tile);
+    state.page='library-editor';
+    state.libraryError='';
+    render();
+    window.scrollTo(0,0);
+    focusLibraryTile(tile.id);
+    window.academyPersistLibraryCatalog(false);
+  };
+  window.academyAddLibrarySource=(id,path)=>{
+    if(!path)return;
+    syncLibraryEditor();
+    const tile=ensureLibraryCatalog().custom.find(item=>item.id===id);
+    if(!tile)return;
+    tile.sources=Array.isArray(tile.sources)?tile.sources:[];
+    if(!tile.sources.includes(path))tile.sources.push(path);
+    render();
+    focusLibraryTile(id);
+    window.academyPersistLibraryCatalog(false);
+  };
+  window.academyRemoveLibrarySource=(id,encodedPath)=>{
+    syncLibraryEditor();
+    const tile=ensureLibraryCatalog().custom.find(item=>item.id===id), path=decodeURIComponent(encodedPath);
+    if(!tile)return;
+    tile.sources=(tile.sources||[]).filter(item=>item!==path);
+    render();
+    focusLibraryTile(id);
+    window.academyPersistLibraryCatalog(false);
+  };
+  window.academyPersistLibraryCatalog=async(showConfirmation=true)=>{
+    if(access?.role!=='leader')return;
+    syncLibraryEditor();
+    state.librarySaving=true;
+    state.libraryError='';
+    librarySaveStatus('Сохраняю изменения…');
+    try{
+      const response=await fetch('/api/academy/library-catalog',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(ensureLibraryCatalog())});
+      if(!response.ok)throw new Error(await academySaveError(response,'Не удалось сохранить каталог.'));
+      const data=await response.json();
+      state.libraryCatalog=data.catalog||state.libraryCatalog;
+      const drafts=(state.libraryCatalog.custom||[]).filter(tile=>!isPublishedLibraryTile(tile)).length;
+      librarySaveStatus(showConfirmation?'Сохранено в общей базе.':drafts?`Черновик сохранён. Добавьте название и текст или материал, чтобы показать его сотрудникам.`:'Изменения сохранены.');
+    }catch(error){
+      const message=error.message||'Не удалось сохранить каталог.';
+      state.libraryError=message;
+      librarySaveStatus(message,true);
+    }
+    state.librarySaving=false;
+  };
+  window.academyQueueLibrarySave=()=>{
+    if(access?.role!=='leader')return;
+    syncLibraryEditor();
+    if(librarySaveTimer)clearTimeout(librarySaveTimer);
+    librarySaveStatus('Сохраняю изменения…');
+    librarySaveTimer=setTimeout(()=>window.academyPersistLibraryCatalog(false),450);
+  };
+  window.academyRemoveLibraryTile=(id,custom)=>{
+    syncLibraryEditor();
+    const catalog=ensureLibraryCatalog();
+    const tile=custom?catalog.custom.find(item=>item.id===id):baseLibraryCourses().find(item=>item.id===id);
+    if(!tile||!window.confirm(`Убрать «${tile.title||'без названия'}» в корзину? Её можно будет вернуть.`))return;
+    if(custom){
+      catalog.custom=catalog.custom.filter(item=>item.id!==id);
+      catalog.archived.unshift(tile);
+    }else if(!catalog.hidden.includes(id))catalog.hidden.push(id);
+    render();
+    window.academyPersistLibraryCatalog(true);
+  };
+  window.academyRestoreLibraryTile=id=>{
+    const catalog=ensureLibraryCatalog();
+    catalog.hidden=catalog.hidden.filter(item=>item!==id);
+    render();
+    window.academyPersistLibraryCatalog(true);
+  };
+  window.academyRestoreArchivedLibraryTile=id=>{
+    const catalog=ensureLibraryCatalog(), tile=catalog.archived.find(item=>item.id===id);
+    if(!tile)return;
+    catalog.archived=catalog.archived.filter(item=>item.id!==id);
+    catalog.custom.unshift(tile);
+    render();
+    focusLibraryTile(id);
+    window.academyPersistLibraryCatalog(true);
+  };
+  window.academySaveLibraryCatalog=()=>window.academyPersistLibraryCatalog(true);
+  window.academyEditOpenedMaterial=()=>{
+    if(access?.role!=='leader')return;
+    const course=current(),{path}=selectedSourceFor(course);
+    if(course?.id?.startsWith('library-custom-')&&!path)return academyLibraryEditor();
+    if(!path)return;
+    state.inlineEditorPath=path;state.inlineEditorHtml='';state.inlineEditorError='';academyLoadInlineMaterial();render();
+  };
   window.academySourceEditor=()=>{if(access?.role!=='leader')return;state.page='source-editor';state.sourceEditorPath=state.sourceEditorPath||editableSources()[0]||'';academyLoadSourceEditor();render();window.scrollTo(0,0);};
   window.academyFilterSourceEditor=input=>{const query=String(input.value||'').trim().toLocaleLowerCase('ru');document.querySelectorAll('[data-source-picker]').forEach(button=>{button.hidden=!!query&&!button.dataset.sourcePicker.includes(query);});};
   window.academySelectSourceEditor=path=>{state.sourceEditorPath=path;state.sourceEditorHtml='';academyLoadSourceEditor();render();};
