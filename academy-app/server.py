@@ -244,16 +244,17 @@ def results_request(method, path, payload=None):
 
 
 def persistent_state_config():
-    """Return the server-only Supabase credentials used for Academy content.
+    """Return the server-only connection used for Academy content edits.
 
-    Content edits must not fall back to Render's ephemeral filesystem in a
-    deployed service.  A separate pair of variables is supported for a future
-    dedicated state store; until then the already configured results project is
-    used.  The service key never reaches the browser.
+    The browser never sees the access token.  The Supabase edge function uses
+    it to authenticate the Academy service before reading or writing one of
+    the explicitly allowlisted state records.  A dedicated state configuration
+    can still be supplied later; the results connection remains the default.
     """
     url = os.getenv("ACADEMY_STATE_URL", os.getenv("ACADEMY_RESULTS_URL", "")).rstrip("/")
     api_key = os.getenv("ACADEMY_STATE_SERVICE_KEY", os.getenv("ACADEMY_RESULTS_SERVICE_KEY", ""))
-    return (url, api_key) if url and api_key else (None, None)
+    access_token = os.getenv("ACADEMY_STATE_WRITE_TOKEN", os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", ""))
+    return (url, api_key, access_token) if url and api_key and access_token else (None, None, None)
 
 
 def allow_local_state():
@@ -263,19 +264,20 @@ def allow_local_state():
     return os.getenv("ACADEMY_ALLOW_LOCAL_STATE", "").lower() in {"1", "true", "yes"}
 
 
-def persistent_state_request(method, path, payload=None, prefer="return=representation"):
-    url, api_key = persistent_state_config()
-    if not url or not api_key:
+def persistent_state_request(method, key, value=None):
+    url, api_key, access_token = persistent_state_config()
+    if not url or not api_key or not access_token:
         raise ValueError("state_not_configured")
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    suffix = "?key=" + quote(key, safe="") if method == "GET" else ""
+    body = json.dumps({"key": key, "value": value}, ensure_ascii=False).encode("utf-8") if method == "POST" else None
     request = Request(
-        url + "/rest/v1/" + path.lstrip("/"),
+        url + "/functions/v1/academy-state" + suffix,
         data=body,
         headers={
             "apikey": api_key,
             "Authorization": "Bearer " + api_key,
+            "X-Academy-State-Token": access_token,
             "Content-Type": "application/json",
-            "Prefer": prefer,
         },
         method=method,
     )
@@ -291,8 +293,8 @@ def read_persistent_state(name):
         return cached["value"]
     if not persistent_state_config()[0]:
         return None
-    rows = persistent_state_request("GET", f"{PERSISTENT_STATE_TABLE}?key=eq.{quote(key, safe='')}&select=value")
-    value = rows[0].get("value") if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+    result = persistent_state_request("GET", key)
+    value = result.get("value") if isinstance(result, dict) else None
     PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
     return value
 
@@ -300,12 +302,7 @@ def read_persistent_state(name):
 def write_persistent_state(name, value):
     key = PERSISTENT_STATE_KEYS[name]
     if persistent_state_config()[0]:
-        persistent_state_request(
-            "POST",
-            PERSISTENT_STATE_TABLE,
-            {"key": key, "value": value},
-            prefer="resolution=merge-duplicates,return=representation",
-        )
+        persistent_state_request("POST", key, value)
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
         return True
     if not allow_local_state():

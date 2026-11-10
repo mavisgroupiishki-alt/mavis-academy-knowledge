@@ -2,6 +2,7 @@ import sys
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -80,6 +81,39 @@ class CourseSourceContractTests(unittest.TestCase):
                 self.assertTrue((server.KNOWLEDGE_ROOT / path).is_file(), path)
 
         self.assertEqual(set(manifest["contacts"]["r"]), {"trainee", "manager", "expert", "leader"})
+
+
+class PersistentStateTransportTests(unittest.TestCase):
+    def test_state_request_uses_server_function_and_never_exposes_access_token_in_url(self):
+        captured = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return b'{"value":{"custom":[]}}'
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["headers"] = dict(request.header_items())
+            captured["timeout"] = timeout
+            return Response()
+
+        with patch.dict(server.os.environ, {
+            "ACADEMY_RESULTS_URL": "https://example.supabase.co",
+            "ACADEMY_RESULTS_SERVICE_KEY": "public-key",
+            "ACADEMY_RESULTS_WRITE_TOKEN": "server-only-token",
+        }, clear=False), patch.object(server, "urlopen", fake_urlopen):
+            payload = server.persistent_state_request("GET", "academy:library-catalog")
+
+        self.assertEqual(payload, {"value": {"custom": []}})
+        self.assertEqual(captured["url"], "https://example.supabase.co/functions/v1/academy-state?key=academy%3Alibrary-catalog")
+        self.assertNotIn("server-only-token", captured["url"])
+        self.assertEqual(captured["headers"]["X-academy-state-token"], "server-only-token")
 
 
 if __name__ == "__main__":
