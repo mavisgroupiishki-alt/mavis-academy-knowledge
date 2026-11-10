@@ -131,6 +131,35 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("sources:[],sourceCourse:'',fallbackContent:''", source)
         self.assertIn("const courseLessonCount=course=>", source)
 
+    def test_trainee_default_contains_only_sheet_tiles(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);", source)
+        self.assertIn("courseIds:['tr-d1-company','tr-d1-clients','tr-d1-sales-structure','tr-d1-product-map','tr-d1-product-summary']", source)
+        self.assertNotIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES, ...TRAINEE_FOUNDATION_COURSES", source)
+
+    def test_each_product_passport_has_a_detailed_expert_flow(self):
+        manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
+        passports = [
+            path
+            for rule in manifest.values()
+            for path in rule.get("p", [])
+            if "Паспорт продукта —" in path
+        ]
+
+        self.assertGreater(len(passports), 0)
+        for path in passports:
+            source = (server.KNOWLEDGE_ROOT / path).read_text(encoding="utf-8")
+            self.assertIn("## Лист: Ход работы эксперта", source, path)
+
+    def test_manager_and_expert_practice_use_different_role_logic(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("function practiceFor(course)", source)
+        self.assertIn("if(audience!=='expert')return {check:fallbackCheck,working:fallbackWorking};", source)
+        self.assertIn("Какой первый шаг эксперта по теме", source)
+        self.assertIn("Выберите обязательные действия эксперта", source)
+
     def test_new_working_materials_are_readable_by_their_assigned_roles(self):
         manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
 

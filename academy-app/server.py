@@ -596,6 +596,7 @@ def validate_document_override(payload):
 
 def validate_trainee_curriculum(payload):
     courses, days = payload.get("courses"), payload.get("days")
+    plan_version = str(payload.get("planVersion", ""))
     if not isinstance(courses, list) or not isinstance(days, list) or len(courses) > 80 or len(days) != 4:
         raise ValueError("invalid_curriculum")
     ids = set()
@@ -616,7 +617,7 @@ def validate_trainee_curriculum(payload):
             raise ValueError("invalid_curriculum")
         if any(str(course_id) not in ids for course_id in day["courseIds"]):
             raise ValueError("invalid_curriculum")
-    return {"courses": courses, "days": days}
+    return {"courses": courses, "days": days, "planVersion": plan_version}
 
 
 def course_access_manifest():
