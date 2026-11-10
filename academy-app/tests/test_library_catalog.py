@@ -111,6 +111,9 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Понятие", source)
         self.assertIn("Инструменты и документы", source)
         self.assertIn("Подсказки для", source)
+        self.assertIn("const genericFlow=audience==='manager'", source)
+        self.assertIn("Фокус менеджера", source)
+        self.assertIn("Фокус эксперта", source)
         self.assertIn("window.academyAudience=", source)
 
     def test_trainee_spk_is_a_standalone_curriculum_lesson(self):
