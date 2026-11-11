@@ -329,11 +329,12 @@ class CourseSourceContractTests(unittest.TestCase):
             self.assertIn(course_id, day_one)
         self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-11.5'", source)
 
-    def test_incomplete_saved_trainee_plan_cannot_hide_required_tiles(self):
+    def test_saved_trainee_plan_allows_leader_to_hide_or_merge_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("const hasCompleteTraineePlan=data=>Boolean(", source)
-        self.assertIn("requiredDay.courseIds.every(id=>savedDay.courseIds.includes(id))", source)
+        self.assertIn("data.days.length===TRAINEE_DAYS.length", source)
+        self.assertIn("data.courses.every(course=>course&&typeof course.id==='string'", source)
         self.assertIn("if(hasCompleteTraineePlan(data))", source)
 
     def test_renaming_a_trainee_tile_does_not_turn_its_title_into_a_source(self):
