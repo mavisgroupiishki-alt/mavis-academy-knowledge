@@ -201,6 +201,15 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("function readerTraineeLegacy(course)", source)
         self.assertIn("academyCompleteSource('${course.id}',0)", source)
 
+    def test_trainee_reader_prefers_the_full_internal_source_to_a_short_preview(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        reader = source.split("function readerTraineeLegacy(course)", 1)[1].split("function contactsReader(course)", 1)[0]
+
+        self.assertIn("path=(course.sources||[])[0]||''", reader)
+        self.assertIn("id=\"course-document\"", reader)
+        self.assertIn("Открываю полный материал…", reader)
+        self.assertIn("Загружаю исходную таблицу и чек-лист внутрь плитки.", reader)
+
     def test_trainee_lessons_embed_materials_and_keep_submitted_work(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
