@@ -177,9 +177,22 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Итоговая работа: диагностика и следующий шаг", source)
         self.assertIn("academySubmitTraineeAssignment", source)
         self.assertIn("courseIds:['tr-d2-repeat-products','tr-d2-script-structure','tr-d2-price-templates','tr-d2-own-script']", source)
-        self.assertIn("courseIds:['tr-d4-products','tr-d2-call-analysis'", source)
+        self.assertIn("courseIds:['tr-d4-repeat-day1','tr-d4-calls','tr-d4-call-analysis','tr-d4-exam']", source)
         final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
         self.assertEqual(final_exam.count("{q:'"), 20)
+
+    def test_trainee_day_one_keeps_all_eight_internal_material_tiles(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        day_one = source.split("const TRAINEE_DAYS = [", 1)[1].split("},", 1)[0]
+        for course_id in (
+            "tr-d1-company", "tr-d1-spk", "tr-d1-attestation-st",
+            "tr-d1-attestation-gs", "tr-d1-iso9001",
+            "tr-d1-iso9001-periodic", "tr-d1-suot45001",
+            "tr-d1-suot45001-periodic",
+        ):
+            self.assertIn(course_id, day_one)
+        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-11.4'", source)
 
     def test_renaming_a_trainee_tile_does_not_turn_its_title_into_a_source(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
