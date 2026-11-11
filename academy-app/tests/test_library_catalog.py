@@ -56,6 +56,9 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         self.assertEqual(curriculum["courses"][0]["id"], "blank-draft")
         self.assertEqual(curriculum["days"][1]["reviewCourseIds"], ["repeat-tile"])
 
+    def test_trainee_curriculum_limit_accepts_the_current_live_program_size(self):
+        self.assertGreater(server.MAX_TRAINEE_CURRICULUM_BYTES, 831_889)
+
     def test_keeps_a_deleted_custom_tile_in_archive_for_restore(self):
         catalog = server.validate_library_catalog({
             "hidden": [],

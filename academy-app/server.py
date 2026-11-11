@@ -20,6 +20,7 @@ KNOWLEDGE_INDEX_CACHE = {"at": 0, "paths": []}
 KNOWLEDGE_TEXT_CACHE = {"at": 0, "texts": {}}
 COURSE_ACCESS_FILE = ROOT / "course-access.json"
 MAX_KNOWLEDGE_DOCUMENT_BYTES = 1_500_000
+MAX_TRAINEE_CURRICULUM_BYTES = 1_500_000
 ALLOWED_KNOWLEDGE_PREFIXES = ("02 PRODUCTS/", "03 SALES/", "04 EXPERT/", "06 BITRIX24/", "07 AI & AUTOMATION/", "09 SOP/")
 UNSAFE_KNOWLEDGE_TERMS = ("парол", "доступ", "ключ", "token", "secret", "credential")
 SENSITIVE_CONTENT_PATTERNS = (
@@ -1254,13 +1255,13 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "forbidden"}, 403)
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length < 2 or length > 700000:
+            if length < 2 or length > MAX_TRAINEE_CURRICULUM_BYTES:
                 return self.respond_json({"error": "invalid_size"}, 413)
             curriculum = validate_trainee_curriculum(json.loads(self.rfile.read(length)))
             append_revision_best_effort("curriculum", "trainee_curriculum", read_trainee_curriculum(), access_payload_from_header(self.headers).get("name", ""))
             if not write_persistent_state("curriculum", curriculum):
                 write_local_json(CURRICULUM_STORE, curriculum)
-            return self.respond_json({"saved": True})
+            return self.respond_json({"saved": True, "curriculum": curriculum})
         except ValueError as exc:
             if str(exc) == "state_not_configured":
                 return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
