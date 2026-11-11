@@ -63,6 +63,7 @@ CLOUDFLARE_AUXILIARY_STATE_NAMES = {
     "academy_events",
 }
 CLOUDFLARE_STATE_ENVELOPE = "mavis-academy-state-v1"
+CLOUDFLARE_AUXILIARY_ENVELOPE_KEY = "_mavis_academy_auxiliary"
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
 DRIVE_AUDIO_FILES = {
@@ -411,29 +412,17 @@ def persistent_state_request(method, key, value=None):
     return supabase_state_request(method, key, value)
 
 
-def cloudflare_document_state_envelope():
-    """Read the Cloudflare document key without confusing it with old data.
+def cloudflare_curriculum_auxiliary_envelope():
+    """Read auxiliary state from the Worker key that is deployed in production.
 
-    The deployed Worker already accepts the three original product keys.  New
-    operational state is kept beside document overrides inside that allowed
-    key, so a Worker rollout cannot make edits, assignments or the revision
-    journal unavailable.
+    The live Worker accepts the original curriculum key but not the later
+    standalone operational keys.  Keeping only the auxiliary namespace inside
+    that durable curriculum payload preserves all editor state and avoids a
+    separate failed storage request.
     """
-    raw = persistent_state_request("GET", PERSISTENT_STATE_KEYS["document_overrides"])
+    raw = persistent_state_request("GET", PERSISTENT_STATE_KEYS["curriculum"])
     value = raw.get("value") if isinstance(raw, dict) else None
-    if isinstance(value, dict) and value.get("schema") == CLOUDFLARE_STATE_ENVELOPE:
-        documents = value.get("documents", {})
-        auxiliary = value.get("auxiliary", {})
-        return {
-            "schema": CLOUDFLARE_STATE_ENVELOPE,
-            "documents": documents if isinstance(documents, dict) else {},
-            "auxiliary": auxiliary if isinstance(auxiliary, dict) else {},
-        }
-    return {
-        "schema": CLOUDFLARE_STATE_ENVELOPE,
-        "documents": value if isinstance(value, dict) else {},
-        "auxiliary": {},
-    }
+    return value if isinstance(value, dict) else {}
 
 
 def read_persistent_state(name):
@@ -444,12 +433,10 @@ def read_persistent_state(name):
     if not backend:
         return None
 
-    if backend == "cloudflare" and (name == "document_overrides" or name in CLOUDFLARE_AUXILIARY_STATE_NAMES):
-        envelope = cloudflare_document_state_envelope()
-        if name == "document_overrides":
-            value = envelope["documents"]
-        else:
-            value = envelope["auxiliary"].get(name)
+    if backend == "cloudflare" and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
+        envelope = cloudflare_curriculum_auxiliary_envelope()
+        auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
+        value = auxiliary.get(name) if isinstance(auxiliary, dict) else None
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
         return value
 
@@ -463,13 +450,19 @@ def read_persistent_state(name):
 def write_persistent_state(name, value):
     backend = persistent_state_config()[0]
     if backend:
-        if backend == "cloudflare" and (name == "document_overrides" or name in CLOUDFLARE_AUXILIARY_STATE_NAMES):
-            envelope = cloudflare_document_state_envelope()
-            if name == "document_overrides":
-                envelope["documents"] = value
-            else:
-                envelope["auxiliary"][name] = value
-            persistent_state_request("POST", PERSISTENT_STATE_KEYS["document_overrides"], envelope)
+        if backend == "cloudflare" and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
+            envelope = cloudflare_curriculum_auxiliary_envelope()
+            auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
+            envelope[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY] = auxiliary if isinstance(auxiliary, dict) else {}
+            envelope[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY][name] = value
+            persistent_state_request("POST", PERSISTENT_STATE_KEYS["curriculum"], envelope)
+        elif backend == "cloudflare" and name == "curriculum":
+            previous = cloudflare_curriculum_auxiliary_envelope()
+            auxiliary = previous.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY)
+            payload = dict(value) if isinstance(value, dict) else value
+            if isinstance(payload, dict) and isinstance(auxiliary, dict):
+                payload[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY] = auxiliary
+            persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], payload)
         else:
             persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], value)
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}

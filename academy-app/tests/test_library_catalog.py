@@ -426,8 +426,8 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("workers.dev/state?key=academy%3Atrainee-submissions", requested_urls[0])
         self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
 
-    def test_cloudflare_keeps_auxiliary_state_inside_the_existing_document_key(self):
-        stored = {"value": {"09 SOP/Документ.md": "Текст"}}
+    def test_cloudflare_keeps_auxiliary_state_inside_the_existing_curriculum_key(self):
+        stored = {"value": {"courses": [], "days": [], "planVersion": "test"}}
 
         class Response:
             def __enter__(self):
@@ -450,11 +450,11 @@ class PersistentStateTransportTests(unittest.TestCase):
             "ACADEMY_STATE_WRITE_TOKEN": "server-only-token",
         }, clear=False), patch.object(server, "urlopen", fake_urlopen):
             server.PERSISTENT_STATE_CACHE.clear()
-            self.assertEqual(server.read_persistent_state("document_overrides"), {"09 SOP/Документ.md": "Текст"})
             self.assertTrue(server.write_persistent_state("revisions", {"items": [{"id": "revision-1"}]}))
             server.PERSISTENT_STATE_CACHE.clear()
-            self.assertEqual(server.read_persistent_state("document_overrides"), {"09 SOP/Документ.md": "Текст"})
             self.assertEqual(server.read_persistent_state("revisions"), {"items": [{"id": "revision-1"}]})
+            self.assertEqual(stored["value"]["courses"], [])
+            self.assertEqual(stored["value"][server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY]["revisions"], {"items": [{"id": "revision-1"}]})
 
 
 if __name__ == "__main__":
