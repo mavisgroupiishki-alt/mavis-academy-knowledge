@@ -153,6 +153,16 @@
     'tr-d1-suot45001':TRAINEE_PRODUCT_PASSPORTS['tr-suot-cert'],
     'tr-d1-suot45001-periodic':TRAINEE_PRODUCT_PASSPORTS['tr-suot-periodic']
   };
+  const TRAINEE_DAY_ONE_SOURCE_COURSES={
+    'tr-d1-company':'company',
+    'tr-d1-spk':'spk',
+    'tr-d1-attestation-st':'attestation',
+    'tr-d1-attestation-gs':'attestation',
+    'tr-d1-iso9001':'iso-suot',
+    'tr-d1-iso9001-periodic':'iso-suot',
+    'tr-d1-suot45001':'iso-suot',
+    'tr-d1-suot45001-periodic':'iso-suot'
+  };
   const traineeEmbeddedCourse=(sourceId,id)=>{
     // Day-one product lessons live in the foundation collection.  Looking
     // only in TRAINEE_COURSES produced seven empty objects, so the catalogue
@@ -236,7 +246,7 @@
   const TRAINEE_COURSE_IDS=new Set(TRAINEE_SHEET_COURSES.map(course=>course.id));
   const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>
     TRAINEE_COURSE_IDS.has(course?.id)
-      ? {...course,sources:TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]?[TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]]:(course.sources||[]),attachments:[],sourceCourse:'',fallbackContent:''}
+      ? {...course,sources:TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]?[TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]]:(course.sources||[]),attachments:[],sourceCourse:TRAINEE_DAY_ONE_SOURCE_COURSES[course.id]||'',fallbackContent:''}
       : course
   );
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);
