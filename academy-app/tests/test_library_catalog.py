@@ -230,6 +230,14 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Открываю полный материал…", reader)
         self.assertIn("Загружаю исходную таблицу и чек-лист внутрь плитки.", reader)
 
+    def test_numbered_source_lines_render_as_one_readable_numbered_list(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        styles = (server.ROOT / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="course-number-list"', source)
+        self.assertIn("const numbered=/^(\\d+)[.)]\\s+(.+)$/.exec(line);", source)
+        self.assertIn(".course-number-list", styles)
+
     def test_trainee_lessons_embed_materials_and_keep_submitted_work(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 

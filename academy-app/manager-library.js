@@ -550,6 +550,18 @@
       const image=/^!\[([^\]]*)\]\(([^)]+)\)\s*$/.exec(lines[index].trim());if(image){index+=1;output.push(courseImage(image[1],image[2]));continue;}
       const line=cleanSourceLine(lines[index++]); if(!line||isHiddenContactLine(line)||/^#{0,3}\s*(первичный источник|полное содержимое из источника|полный текст из источника)$/i.test(line)||/^(направляю|направляем)\s+актуальн\w*\s+форм\w*/i.test(line)) continue;
       if(/^#{1,6}\s/.test(line)){const heading=line.replace(/^#{1,6}\s/,'');output.push(`<h2 class="course-section-heading">${esc(heading.replace(/^Лист:\s*/,''))}</h2>`);continue;}
+      const numbered=/^(\d+)[.)]\s+(.+)$/.exec(line);
+      if(numbered){
+        const items=[numbered];
+        while(index<lines.length){
+          const next=cleanSourceLine(lines[index]);
+          const nextNumbered=/^(\d+)[.)]\s+(.+)$/.exec(next);
+          if(!nextNumbered)break;
+          items.push(nextNumbered);index+=1;
+        }
+        output.push(`<ol class="course-number-list">${items.map(([,number,text])=>`<li><b>${esc(number)}</b><span>${richText(text)}</span></li>`).join('')}</ol>`);
+        continue;
+      }
       output.push(`<div class="course-prose">${richText(line)}</div>`);
     }
     return output.join('');
