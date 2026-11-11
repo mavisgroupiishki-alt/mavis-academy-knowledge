@@ -46,6 +46,7 @@ PERSISTENT_STATE_KEYS = {
     "revisions": "academy:revisions",
     "academy_events": "academy:events",
 }
+CURRENT_TRAINEE_PLAN_VERSION = "sales-internship-sheet-2026-11-11.4"
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
 DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
 LIBRARY_CATALOG_STORE = ROOT / "data" / "library-catalog.json"
@@ -527,14 +528,26 @@ def is_safe_rich_text(value):
 def read_trainee_curriculum():
     remote = read_persistent_state("curriculum")
     if remote is not None:
-        return remote if isinstance(remote, dict) and isinstance(remote.get("courses"), list) and isinstance(remote.get("days"), list) else None
+        # Versions created before the approved four-day programme can contain
+        # a partial Day 1. Never send them back to a fresh client session.
+        return remote if (
+            isinstance(remote, dict)
+            and remote.get("planVersion") == CURRENT_TRAINEE_PLAN_VERSION
+            and isinstance(remote.get("courses"), list)
+            and isinstance(remote.get("days"), list)
+        ) else None
     if not allow_local_state():
         return None
     if not CURRICULUM_STORE.is_file():
         return None
     try:
         value = json.loads(CURRICULUM_STORE.read_text(encoding="utf-8"))
-        if isinstance(value, dict) and isinstance(value.get("courses"), list) and isinstance(value.get("days"), list):
+        if (
+            isinstance(value, dict)
+            and value.get("planVersion") == CURRENT_TRAINEE_PLAN_VERSION
+            and isinstance(value.get("courses"), list)
+            and isinstance(value.get("days"), list)
+        ):
             return value
     except (OSError, json.JSONDecodeError):
         pass

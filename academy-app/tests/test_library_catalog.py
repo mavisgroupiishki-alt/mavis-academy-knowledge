@@ -87,6 +87,16 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         self.assertEqual(catalog["overrides"]["spk"]["attachments"], [{"title": "Рабочая таблица", "url": "https://docs.google.com/spreadsheets/d/example", "kind": "spreadsheet"}])
         self.assertEqual(catalog["custom"][0]["attachments"], [{"title": "Видео", "url": "https://example.com/video", "kind": "video"}])
 
+    def test_rejects_a_saved_trainee_program_from_an_old_version(self):
+        stale_program = {
+            "planVersion": "sales-internship-sheet-2026-11-11.2",
+            "courses": [{"id": "tr-d1-company"}],
+            "days": [{"courseIds": ["tr-d1-company"]}],
+        }
+
+        with patch.object(server, "read_persistent_state", return_value=stale_program):
+            self.assertIsNone(server.read_trainee_curriculum())
+
 
 class CourseSourceContractTests(unittest.TestCase):
     def test_staff_roles_share_library_access_and_test_hub(self):
