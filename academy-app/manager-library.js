@@ -131,12 +131,25 @@
     assignment:TRAINEE_ASSIGNMENTS[id]||{title:'Обязательное задание',prompt:items.join('\n'),minLength:80},
     content:traineeLesson(title,lead,[...(TRAINEE_MATERIALS[id]||[{title:'Материал',text:'Изучите тему, проверьте входные данные и зафиксируйте безопасный следующий шаг.'}]),{title:'Обязательное задание на сегодня',items}])
   });
+  // День 01 должен открывать не рекламный пересказ, а полный паспорт продукта,
+  // уже лежащий внутри базы.  Карта намеренно содержит только локальные файлы:
+  // сотрудник читает материал в Academy, а не уходит в исходную таблицу.
+  const TRAINEE_PRODUCT_PASSPORTS={
+    'tr-spk':'02 PRODUCTS/Паспорт продукта — 0101 СПК.md',
+    'tr-att-st':'02 PRODUCTS/Паспорт продукта — 0104.07 Аттестация СТ.md',
+    'tr-att-gs':'02 PRODUCTS/Паспорт продукта — 0104.06 Аттестация ГС.md',
+    'tr-iso-cert':'02 PRODUCTS/Паспорт продукта — 0301 Сертификат ISO 9001.md',
+    'tr-iso-periodic':'02 PRODUCTS/Паспорт продукта — 0302 Периодика ISO 9001.md',
+    'tr-suot-cert':'02 PRODUCTS/Паспорт продукта — 0303 Сертификат СУОТ 45001.md',
+    'tr-suot-periodic':'02 PRODUCTS/Паспорт продукта — 0304 Периодика СУОТ 45001.md'
+  };
   const traineeEmbeddedCourse=(sourceId,id)=>{
     // Day-one product lessons live in the foundation collection.  Looking
     // only in TRAINEE_COURSES produced seven empty objects, so the catalogue
     // rendered just the company tile.
     const source=[...TRAINEE_COURSES,...TRAINEE_FOUNDATION_COURSES].find(course=>course.id===sourceId);
-    return {...source,id,eyebrow:'День 01 · материал стажировки',sources:[],attachments:[],sourceCourse:'',fallbackContent:'',assignment:{title:'Конспект по продукту',minLength:350,prompt:'Опишите: что это за документ; кому и когда он нужен; какие вводные нужно собрать; как проходит работа; какой конкретный следующий шаг вы согласуете с клиентом. Не используйте реальные данные клиентов.'}};
+    const passport=TRAINEE_PRODUCT_PASSPORTS[sourceId];
+    return {...source,id,eyebrow:'День 01 · материал стажировки',sources:passport?[passport]:[],attachments:[],sourceCourse:'',fallbackContent:'',assignment:{title:'Конспект по продукту',minLength:350,prompt:'По полному паспорту продукта опишите: что это за документ; кому и когда он нужен; какие вводные нужно собрать; как проходит работа; какой конкретный следующий шаг вы согласуете с клиентом. Не используйте реальные данные клиентов.'}};
   };
   const TRAINEE_SHEET_COURSES = [
     traineeSheetTile('tr-d1-company','О компании','День 01 · таблица стажировки','Изучите, чем занимается Mavis Group и какой результат получает клиент.',['Опишите своими словами, чем занимается компания.','Запишите, какую проблему клиента решают разрешительные документы и сопровождение.']),
@@ -213,7 +226,7 @@
   const TRAINEE_COURSE_IDS=new Set(TRAINEE_SHEET_COURSES.map(course=>course.id));
   const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>
     TRAINEE_COURSE_IDS.has(course?.id)
-      ? {...course,sources:[],attachments:[],sourceCourse:'',fallbackContent:''}
+      ? {...course,attachments:[],sourceCourse:'',fallbackContent:''}
       : course
   );
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);

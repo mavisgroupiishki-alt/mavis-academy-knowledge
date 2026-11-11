@@ -160,8 +160,24 @@ class CourseSourceContractTests(unittest.TestCase):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("const TRAINEE_DAYS = [", source)
-        self.assertIn("sources:[],attachments:[],sourceCourse:'',fallbackContent:''", source)
+        self.assertIn("const TRAINEE_PRODUCT_PASSPORTS=", source)
+        self.assertIn("sources:passport?[passport]:[]", source)
         self.assertIn("const courseLessonCount=course=>", source)
+
+    def test_day_one_product_tiles_use_full_local_passports(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        passports = (
+            "Паспорт продукта — 0101 СПК.md",
+            "Паспорт продукта — 0104.07 Аттестация СТ.md",
+            "Паспорт продукта — 0104.06 Аттестация ГС.md",
+            "Паспорт продукта — 0301 Сертификат ISO 9001.md",
+            "Паспорт продукта — 0302 Периодика ISO 9001.md",
+            "Паспорт продукта — 0303 Сертификат СУОТ 45001.md",
+            "Паспорт продукта — 0304 Периодика СУОТ 45001.md",
+        )
+        for passport in passports:
+            self.assertIn(passport, source)
+            self.assertTrue((server.KNOWLEDGE_ROOT / "02 PRODUCTS" / passport).is_file(), passport)
 
     def test_trainee_default_contains_only_sheet_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
