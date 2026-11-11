@@ -104,6 +104,9 @@
 .course-document-title{max-width:980px;margin:0 0 18px!important;padding:0 0 16px;border-bottom:2px solid #dce9e2;font-family:Georgia,serif!important;font-size:clamp(31px,3.35vw,47px)!important;line-height:1.06!important;letter-spacing:-.045em;color:#143d4d}
 .course-section-heading{max-width:980px;margin:26px 0 12px!important;padding:0 0 10px;border-bottom:1px solid #dce9e2;font-family:Georgia,serif!important;font-size:clamp(24px,2.25vw,31px)!important;line-height:1.16!important;letter-spacing:-.032em;color:#173f4d}
 .course-document>.course-document-title+.course-section-heading{margin-top:16px!important}.course-document>:empty,.course-document p:has(> br:only-child){display:none}
+/* Leader edits are stored as safe HTML.  Those headings do not have the
+   Markdown classes above, so keep them on the same compact document scale. */
+.course-document>*{min-width:0;box-sizing:border-box}.course-document h2:not(.course-document-title):not(.course-section-heading){max-width:28ch;margin:22px 0 12px;padding:0 0 10px;border-bottom:2px solid #dce9e2;font-family:Georgia,serif;font-size:clamp(28px,3vw,42px);line-height:1.1;letter-spacing:-.042em;color:#143d4d;overflow-wrap:anywhere}.course-document h3:not(.course-section-heading){max-width:34ch;margin:22px 0 9px;color:#173f4d;font-family:Georgia,serif;font-size:clamp(22px,2.2vw,29px);line-height:1.18;letter-spacing:-.028em;overflow-wrap:anywhere}.course-document p,.course-document li,.course-document td,.course-document th{overflow-wrap:anywhere;word-break:normal}.course-document>table,.course-document .course-table-wrap{max-width:100%;overflow-x:auto}
 @media(max-width:760px){.course-document-title{font-size:31px!important;line-height:1.1!important}.course-section-heading{font-size:24px!important;margin-top:23px!important}.course-prose{padding:14px 15px}}
 
 /* Reader navigation: a selected section must be unmistakable, especially on a phone. */
