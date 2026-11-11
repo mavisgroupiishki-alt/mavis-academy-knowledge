@@ -153,6 +153,7 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("id:'tr-spk'", source)
         self.assertIn("СПК: свидетельство", source)
         self.assertIn("const TRAINEE_COURSE_IDS=new Set", source)
+        self.assertIn("[...TRAINEE_COURSES,...TRAINEE_FOUNDATION_COURSES].find", source)
         self.assertNotIn("const TRAINEE_SOURCE_COURSES", source)
 
     def test_trainee_keeps_the_four_day_curriculum_instead_of_staff_reference_tabs(self):

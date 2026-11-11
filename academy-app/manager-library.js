@@ -132,7 +132,10 @@
     content:traineeLesson(title,lead,[...(TRAINEE_MATERIALS[id]||[{title:'Материал',text:'Изучите тему, проверьте входные данные и зафиксируйте безопасный следующий шаг.'}]),{title:'Обязательное задание на сегодня',items}])
   });
   const traineeEmbeddedCourse=(sourceId,id)=>{
-    const source=TRAINEE_COURSES.find(course=>course.id===sourceId);
+    // Day-one product lessons live in the foundation collection.  Looking
+    // only in TRAINEE_COURSES produced seven empty objects, so the catalogue
+    // rendered just the company tile.
+    const source=[...TRAINEE_COURSES,...TRAINEE_FOUNDATION_COURSES].find(course=>course.id===sourceId);
     return {...source,id,eyebrow:'День 01 · материал стажировки',sources:[],attachments:[],sourceCourse:'',fallbackContent:'',assignment:{title:'Конспект по продукту',minLength:350,prompt:'Опишите: что это за документ; кому и когда он нужен; какие вводные нужно собрать; как проходит работа; какой конкретный следующий шаг вы согласуете с клиентом. Не используйте реальные данные клиентов.'}};
   };
   const TRAINEE_SHEET_COURSES = [
