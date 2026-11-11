@@ -129,14 +129,15 @@ class CourseSourceContractTests(unittest.TestCase):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("const TRAINEE_DAYS = [", source)
-        self.assertIn("sources:[],sourceCourse:'',fallbackContent:''", source)
+        self.assertIn("sources:[],attachments:[],sourceCourse:'',fallbackContent:''", source)
         self.assertIn("const courseLessonCount=course=>", source)
 
     def test_trainee_default_contains_only_sheet_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);", source)
-        self.assertIn("courseIds:['tr-d1-company','tr-d1-clients','tr-d1-sales-structure','tr-d1-product-map','tr-d1-product-summary']", source)
+        self.assertIn("courseIds:['tr-d1-company','tr-d1-spk','tr-d1-attestation-st'", source)
+        self.assertNotIn("tr-d1-sales-structure","".join(source.split("const TRAINEE_DAYS = [", 1)[1].split("];", 1)[0]))
         self.assertNotIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES, ...TRAINEE_FOUNDATION_COURSES", source)
 
     def test_trainee_course_reader_is_defined(self):
@@ -145,14 +146,16 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("function readerTraineeLegacy(course)", source)
         self.assertIn("academyCompleteSource('${course.id}',0)", source)
 
-    def test_trainee_lessons_keep_material_links_and_submitted_work(self):
+    def test_trainee_lessons_embed_materials_and_keep_submitted_work(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("const TRAINEE_MATERIALS=", source)
-        self.assertIn("const TRAINEE_ATTACHMENTS=", source)
+        self.assertNotIn("const TRAINEE_ATTACHMENTS=", source)
+        self.assertIn("attachments:[]", source)
+        self.assertIn("Вся учебная информация находится в этой плитке", source)
         self.assertIn("Обязательное задание на сегодня", source)
+        self.assertIn("Итоговая работа: диагностика и следующий шаг", source)
         self.assertIn("academySubmitTraineeAssignment", source)
-        self.assertIn("https://docs.google.com/videos/d/1i3c78Sie", source)
         self.assertIn("courseIds:['tr-d2-repeat-products','tr-d2-script-structure','tr-d2-price-templates','tr-d2-own-script']", source)
         self.assertIn("courseIds:['tr-d4-products','tr-d2-call-analysis'", source)
         final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
@@ -241,6 +244,11 @@ class CourseSourceContractTests(unittest.TestCase):
 
 
 class PersistentStateTransportTests(unittest.TestCase):
+    def test_cloudflare_worker_allows_every_server_persistent_state_key(self):
+        worker = (server.ROOT / "cloudflare" / "mavis-academy-state.js").read_text(encoding="utf-8")
+        for key in server.PERSISTENT_STATE_KEYS.values():
+            self.assertIn(f'"{key}"', worker)
+
     def test_state_request_uses_authenticated_rpc_and_never_exposes_access_token_in_url(self):
         captured = {}
 

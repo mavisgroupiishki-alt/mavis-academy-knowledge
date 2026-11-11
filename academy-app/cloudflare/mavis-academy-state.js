@@ -2,6 +2,10 @@ const ALLOWED_KEYS = new Set([
   "academy:trainee-curriculum",
   "academy:document-overrides",
   "academy:library-catalog",
+  "academy:trainee-submissions",
+  "academy:material-metadata",
+  "academy:revisions",
+  "academy:events",
 ]);
 
 const json = (value, status = 200) => new Response(JSON.stringify(value), {
