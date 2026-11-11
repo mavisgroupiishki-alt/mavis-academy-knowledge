@@ -41,11 +41,19 @@ PERSISTENT_STATE_KEYS = {
     "curriculum": "academy:trainee-curriculum",
     "document_overrides": "academy:document-overrides",
     "library_catalog": "academy:library-catalog",
+    "trainee_submissions": "academy:trainee-submissions",
+    "material_metadata": "academy:material-metadata",
+    "revisions": "academy:revisions",
+    "academy_events": "academy:events",
 }
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
 DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
 LIBRARY_CATALOG_STORE = ROOT / "data" / "library-catalog.json"
 FALLBACK_RESULTS_STORE = ROOT / "data" / "academy-local-results.json"
+TRAINEE_SUBMISSIONS_STORE = ROOT / "data" / "trainee-submissions.json"
+MATERIAL_METADATA_STORE = ROOT / "data" / "material-metadata.json"
+REVISIONS_STORE = ROOT / "data" / "academy-revisions.json"
+ACADEMY_EVENTS_STORE = ROOT / "data" / "academy-events.json"
 PERSISTENT_STATE_CACHE = {}
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
@@ -164,6 +172,37 @@ def search_knowledge_paths(query, allowed_paths=None):
         if all(term in haystack for term in terms):
             matches.append(path)
     return matches[:120]
+
+
+def search_knowledge_results(query, allowed_paths=None):
+    """Return short context snippets, not only a filename, for Academy search."""
+    terms = normalize_terms(query)
+    if not terms:
+        return []
+    results = []
+    searchable_paths = sorted(set(allowed_paths if allowed_paths is not None else knowledge_paths()))
+    for path in searchable_paths:
+        try:
+            cached = KNOWLEDGE_TEXT_CACHE["texts"].get(path)
+            if cached is None:
+                cached = fetch_knowledge_document(path)
+                KNOWLEDGE_TEXT_CACHE["texts"][path] = cached
+            lower = cached.lower()
+        except (URLError, HTTPError, TimeoutError, ValueError, UnicodeDecodeError):
+            continue
+        if not all(term in (path + "\n" + cached).lower() for term in terms):
+            continue
+        positions = [lower.find(term) for term in terms if lower.find(term) >= 0]
+        start = max(0, min(positions or [0]) - 95)
+        excerpt = re.sub(r"\s+", " ", cached[start:start + 340]).strip()
+        if start:
+            excerpt = "…" + excerpt
+        if start + 340 < len(cached):
+            excerpt += "…"
+        results.append({"path": path, "excerpt": excerpt})
+        if len(results) >= 40:
+            break
+    return results
 
 
 def _b64(data):
@@ -508,6 +547,42 @@ def read_library_catalog():
         return default
 
 
+def read_auxiliary_state(name, path, default):
+    """Read operational Academy data without mixing it into the knowledge base."""
+    remote = read_persistent_state(name)
+    if remote is not None:
+        return remote if isinstance(remote, type(default)) else default
+    if not allow_local_state() or not path.is_file():
+        return default
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, type(default)) else default
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def write_auxiliary_state(name, path, value):
+    if not write_persistent_state(name, value):
+        write_local_json(path, value)
+
+
+def append_revision(scope, key, value, actor):
+    """Store the last web-editor states so a leader can undo an edit."""
+    if value is None:
+        return
+    revisions = read_auxiliary_state("revisions", REVISIONS_STORE, {"items": []})
+    items = revisions.get("items", []) if isinstance(revisions, dict) else []
+    entry = {
+        "id": secrets.token_urlsafe(10),
+        "scope": scope,
+        "key": key,
+        "value": value,
+        "actor": str(actor or "Сотрудник")[:80],
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    write_auxiliary_state("revisions", REVISIONS_STORE, {"items": (items + [entry])[-30:]})
+
+
 def validate_library_catalog(payload):
     if not isinstance(payload, dict):
         raise ValueError("invalid_library_catalog")
@@ -729,6 +804,16 @@ class Handler(SimpleHTTPRequestHandler):
             return self.save_document_override()
         if self.path == "/api/academy/library-catalog":
             return self.save_library_catalog()
+        if self.path == "/api/academy/submissions":
+            return self.save_trainee_submission()
+        if self.path == "/api/academy/submission-feedback":
+            return self.save_submission_feedback()
+        if self.path == "/api/academy/events":
+            return self.save_academy_event()
+        if self.path == "/api/academy/material-metadata":
+            return self.save_material_metadata()
+        if self.path == "/api/academy/revisions/restore":
+            return self.restore_revision()
         if self.path == "/api/ai/ask":
             return self.ask_knowledge()
         if self.path == "/api/academy/attempts":
@@ -832,13 +917,203 @@ class Handler(SimpleHTTPRequestHandler):
             _, _, write_token = results_store_config()
             rows = results_request("POST", "rpc/academy_list_attempts", {"p_access_token": write_token})
             trainees = results_request("POST", "rpc/academy_list_trainees", {"p_access_token": write_token})
-            return self.respond_json({"results": rows, "trainees": trainees})
+            return self.respond_json(self.leader_operational_payload(rows, trainees))
         except ValueError as exc:
             fallback = read_fallback_results()
-            return self.respond_json({"results": fallback["results"], "trainees": fallback["trainees"], "storage": "server_fallback"})
+            payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
+            payload["storage"] = "server_fallback"
+            return self.respond_json(payload)
         except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
             fallback = read_fallback_results()
-            return self.respond_json({"results": fallback["results"], "trainees": fallback["trainees"], "storage": "server_fallback"})
+            payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
+            payload["storage"] = "server_fallback"
+            return self.respond_json(payload)
+
+    def leader_operational_payload(self, rows, trainees):
+        submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+        events = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+        event_items = events.get("items", []) if isinstance(events, dict) else []
+        opens = [item for item in event_items if item.get("type") == "course_open"]
+        errors = [item for item in event_items if item.get("type") in {"client_error", "unhandled_rejection"}]
+        course_opens = {}
+        for item in opens:
+            course_id = item.get("course_id") or "unknown"
+            course_opens[course_id] = course_opens.get(course_id, 0) + 1
+        return {
+            "results": rows,
+            "trainees": trainees,
+            "submissions": (submissions.get("items", []) if isinstance(submissions, dict) else [])[-100:],
+            "analytics": {"course_opens": course_opens, "client_errors": errors[-50:], "opened_materials": len(opens)},
+        }
+
+    def save_trainee_submission(self):
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] != "trainee":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 12000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            course_id = str(payload.get("course_id", ""))
+            title = " ".join(str(payload.get("title", "")).split())[:180]
+            answer = str(payload.get("answer", "")).strip()
+            link = str(payload.get("link", "")).strip()
+            if not re.fullmatch(r"[a-z0-9-]{2,80}", course_id) or not title or not 20 <= len(answer) <= 8000:
+                return self.respond_json({"error": "invalid_submission"}, 400)
+            if link and not re.fullmatch(r"https://[^\s]{1,1800}", link):
+                return self.respond_json({"error": "invalid_link"}, 400)
+            state = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+            items = state.get("items", []) if isinstance(state, dict) else []
+            row = {
+                "id": secrets.token_urlsafe(10),
+                "candidate_name": access["name"],
+                "course_id": course_id,
+                "title": title,
+                "answer": answer,
+                "link": link,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": (items + [row])[-500:]})
+            return self.respond_json({"saved": True, "submission": row})
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
+            return self.respond_json({"error": "invalid_submission"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+
+    def save_submission_feedback(self):
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] not in STAFF_ROLES:
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 5000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            submission_id = str(payload.get("id", ""))
+            feedback = " ".join(str(payload.get("feedback", "")).split())
+            if not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", submission_id) or not 2 <= len(feedback) <= 3000:
+                return self.respond_json({"error": "invalid_feedback"}, 400)
+            state = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+            items = state.get("items", []) if isinstance(state, dict) else []
+            updated = False
+            for item in items:
+                if item.get("id") == submission_id:
+                    item["feedback"] = feedback
+                    item["feedback_by"] = access["name"]
+                    item["feedback_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    updated = True
+                    break
+            if not updated:
+                return self.respond_json({"error": "not_found"}, 404)
+            write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": items[-300:]})
+            return self.respond_json({"saved": True})
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "invalid_feedback"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+
+    def save_academy_event(self):
+        access = access_payload_from_header(self.headers)
+        if not access:
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 5000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            event_type = str(payload.get("type", ""))
+            if event_type not in {"course_open", "client_error", "unhandled_rejection"}:
+                return self.respond_json({"error": "invalid_event"}, 400)
+            event = {
+                "type": event_type,
+                "candidate_name": access["name"],
+                "role": access["role"],
+                "course_id": str(payload.get("course_id", ""))[:80],
+                "message": str(payload.get("message", ""))[:900],
+                "page": str(payload.get("page", ""))[:160],
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            state = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+            items = state.get("items", []) if isinstance(state, dict) else []
+            write_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": (items + [event])[-800:]})
+            return self.respond_json({"saved": True})
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
+            return self.respond_json({"error": "invalid_event"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+
+    def save_material_metadata(self):
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] not in STAFF_ROLES:
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 4000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            target = str(payload.get("target", ""))
+            owner = " ".join(str(payload.get("owner", "")).split())[:100]
+            reviewed_at = str(payload.get("reviewed_at", ""))[:10]
+            review_due = str(payload.get("review_due", ""))[:10]
+            status = str(payload.get("status", ""))
+            if not (is_safe_knowledge_path(target) or re.fullmatch(r"[a-z0-9-]{2,80}", target)) or status not in {"actual", "needs_review"}:
+                return self.respond_json({"error": "invalid_metadata"}, 400)
+            for date in (reviewed_at, review_due):
+                if date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+                    return self.respond_json({"error": "invalid_metadata"}, 400)
+            state = read_auxiliary_state("material_metadata", MATERIAL_METADATA_STORE, {"items": {}})
+            items = state.get("items", {}) if isinstance(state, dict) else {}
+            items[target] = {"owner": owner, "reviewed_at": reviewed_at, "review_due": review_due, "status": status, "updated_by": access["name"], "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+            write_auxiliary_state("material_metadata", MATERIAL_METADATA_STORE, {"items": items})
+            return self.respond_json({"saved": True, "metadata": items[target]})
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
+            return self.respond_json({"error": "invalid_metadata"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+
+    def restore_revision(self):
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] not in STAFF_ROLES:
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length))
+            revision_id = str(payload.get("id", ""))
+            revisions = read_auxiliary_state("revisions", REVISIONS_STORE, {"items": []})
+            entry = next((item for item in revisions.get("items", []) if item.get("id") == revision_id), None)
+            if not entry:
+                return self.respond_json({"error": "revision_not_found"}, 404)
+            scope, key, value = entry.get("scope"), entry.get("key"), entry.get("value")
+            if scope == "document" and is_safe_knowledge_path(key) and isinstance(value, str):
+                current = read_document_overrides()
+                append_revision("document", key, current.get(key), access["name"])
+                current[key] = value
+                if not write_persistent_state("document_overrides", current):
+                    write_local_json(DOCUMENT_OVERRIDES_STORE, current)
+            elif scope == "catalog" and isinstance(value, dict):
+                append_revision("catalog", "library_catalog", read_library_catalog(), access["name"])
+                if not write_persistent_state("library_catalog", value):
+                    write_local_json(LIBRARY_CATALOG_STORE, value)
+            elif scope == "curriculum" and isinstance(value, dict):
+                append_revision("curriculum", "trainee_curriculum", read_trainee_curriculum(), access["name"])
+                if not write_persistent_state("curriculum", value):
+                    write_local_json(CURRICULUM_STORE, value)
+            else:
+                return self.respond_json({"error": "invalid_revision"}, 400)
+            return self.respond_json({"restored": True, "scope": scope, "key": key})
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
+            return self.respond_json({"error": "invalid_revision"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def save_trainee_curriculum(self):
         if access_role_from_header(self.headers) not in STAFF_ROLES:
@@ -848,6 +1123,7 @@ class Handler(SimpleHTTPRequestHandler):
             if length < 2 or length > 700000:
                 return self.respond_json({"error": "invalid_size"}, 413)
             curriculum = validate_trainee_curriculum(json.loads(self.rfile.read(length)))
+            append_revision("curriculum", "trainee_curriculum", read_trainee_curriculum(), access_payload_from_header(self.headers).get("name", ""))
             if not write_persistent_state("curriculum", curriculum):
                 write_local_json(CURRICULUM_STORE, curriculum)
             return self.respond_json({"saved": True})
@@ -867,6 +1143,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond_json({"error": "invalid_size"}, 413)
             path, content = validate_document_override(json.loads(self.rfile.read(length)))
             overrides = read_document_overrides()
+            append_revision("document", path, overrides.get(path), access_payload_from_header(self.headers).get("name", ""))
             overrides[path] = content
             if not write_persistent_state("document_overrides", overrides):
                 write_local_json(DOCUMENT_OVERRIDES_STORE, overrides)
@@ -886,6 +1163,7 @@ class Handler(SimpleHTTPRequestHandler):
             if length < 2 or length > 120000:
                 return self.respond_json({"error": "invalid_size"}, 413)
             catalog = validate_library_catalog(json.loads(self.rfile.read(length)))
+            append_revision("catalog", "library_catalog", read_library_catalog(), access_payload_from_header(self.headers).get("name", ""))
             if not write_persistent_state("library_catalog", catalog):
                 write_local_json(LIBRARY_CATALOG_STORE, catalog)
             return self.respond_json({"saved": True, "catalog": catalog})
@@ -1071,6 +1349,22 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/academy/leader-results":
             return self.academy_leader_results()
+        if self.path.startswith("/api/academy/material-metadata"):
+            if access_role_from_header(self.headers) not in STAFF_ROLES:
+                return self.respond_json({"error": "forbidden"}, 403)
+            target = parse_qs(urlparse(self.path).query).get("target", [""])[0]
+            state = read_auxiliary_state("material_metadata", MATERIAL_METADATA_STORE, {"items": {}})
+            items = state.get("items", {}) if isinstance(state, dict) else {}
+            return self.respond_json({"metadata": items.get(target, {}) if target else items})
+        if self.path.startswith("/api/academy/revisions"):
+            if access_role_from_header(self.headers) not in STAFF_ROLES:
+                return self.respond_json({"error": "forbidden"}, 403)
+            query = parse_qs(urlparse(self.path).query)
+            scope, key = query.get("scope", [""])[0], query.get("key", [""])[0]
+            state = read_auxiliary_state("revisions", REVISIONS_STORE, {"items": []})
+            items = state.get("items", []) if isinstance(state, dict) else []
+            visible = [{field: item.get(field) for field in ("id", "scope", "key", "actor", "created_at")} for item in reversed(items) if (not scope or item.get("scope") == scope) and (not key or item.get("key") == key)]
+            return self.respond_json({"revisions": visible[:20]})
         if self.path == "/api/academy/trainee-curriculum":
             if not access_role_from_header(self.headers):
                 return self.respond_json({"error": "auth_required"}, 401)
@@ -1102,7 +1396,8 @@ class Handler(SimpleHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             if len(query.strip()) > 100:
                 return self.respond_json({"error": "invalid_query"}, 400)
-            return self.respond_json({"paths": search_knowledge_paths(query, accessible_paths_for(role))})
+            results = search_knowledge_results(query, accessible_paths_for(role))
+            return self.respond_json({"paths": [item["path"] for item in results], "results": results})
         if self.path.startswith("/api/training-audio?"):
             return self.stream_training_audio()
         if self.path.startswith("/api/course/document?"):

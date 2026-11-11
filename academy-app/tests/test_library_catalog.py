@@ -145,6 +145,33 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("function readerTraineeLegacy(course)", source)
         self.assertIn("academyCompleteSource('${course.id}',0)", source)
 
+    def test_trainee_lessons_keep_material_links_and_submitted_work(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("const TRAINEE_MATERIALS=", source)
+        self.assertIn("const TRAINEE_ATTACHMENTS=", source)
+        self.assertIn("Обязательное задание на сегодня", source)
+        self.assertIn("academySubmitTraineeAssignment", source)
+        self.assertIn("https://docs.google.com/videos/d/1i3c78Sie", source)
+        self.assertIn("courseIds:['tr-d2-repeat-products','tr-d2-script-structure','tr-d2-price-templates','tr-d2-own-script']", source)
+        self.assertIn("courseIds:['tr-d4-products','tr-d2-call-analysis'", source)
+        final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
+        self.assertEqual(final_exam.count("{q:'"), 20)
+
+    def test_renaming_a_trainee_tile_does_not_turn_its_title_into_a_source(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("if(field.dataset.field==='title')course.sources=[value]", source)
+        self.assertIn("sources:[],practice:'sales'", source)
+
+    def test_operational_endpoints_and_search_snippets_are_present(self):
+        source = (server.ROOT / "server.py").read_text(encoding="utf-8")
+
+        for endpoint in ("/api/academy/submissions", "/api/academy/submission-feedback", "/api/academy/events", "/api/academy/material-metadata", "/api/academy/revisions/restore"):
+            self.assertIn(endpoint, source)
+        self.assertIn("def search_knowledge_results", source)
+        self.assertIn("def append_revision", source)
+
     def test_manager_reader_loads_full_workflow_materials(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
