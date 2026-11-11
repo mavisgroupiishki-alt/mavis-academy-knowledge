@@ -443,7 +443,14 @@ def read_persistent_state(name):
         # an existing editor change.  The next normal save migrates it into
         # the curriculum envelope.
         if value is None:
-            legacy = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+            # Some deployed Worker revisions do not recognise the former
+            # standalone key.  That legacy read is optional: a 400 there must
+            # not prevent a new edit from being saved into the working
+            # curriculum envelope.
+            try:
+                legacy = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+            except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
+                legacy = None
             value = legacy.get("value") if isinstance(legacy, dict) else None
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
         return value
