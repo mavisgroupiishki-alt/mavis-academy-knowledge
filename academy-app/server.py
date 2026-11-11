@@ -318,27 +318,45 @@ def supabase_state_fallback_config():
 
 
 def supabase_state_request(method, key, value=None):
-    """Call the legacy state RPC without changing the active backend."""
+    """Read or write Academy state through the server-only Supabase key.
+
+    The former RPC helper became an unnecessary availability dependency: a
+    valid service key could reach Supabase while the helper function still
+    rejected the request.  Use the key/value table directly instead.  The
+    service key remains on the server; nothing in this transport reaches the
+    browser.
+    """
     url, api_key, access_token = supabase_state_fallback_config()
     if not url or not api_key or not access_token:
         raise ValueError("state_not_configured")
-    function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
-    payload = {"p_access_token": access_token, "p_key": key}
-    if method == "POST":
-        payload["p_value"] = value
+    headers = {
+        "apikey": api_key,
+        "Authorization": "Bearer " + api_key,
+        "Content-Type": "application/json",
+    }
+    if method == "GET":
+        request = Request(
+            url + "/rest/v1/" + PERSISTENT_STATE_TABLE + "?select=value&key=eq." + quote(key, safe=""),
+            headers=headers,
+            method="GET",
+        )
+        with urlopen(request, timeout=15) as response:
+            raw = response.read()
+        rows = json.loads(raw.decode("utf-8")) if raw else []
+        if not isinstance(rows, list):
+            raise ValueError("invalid_state_response")
+        first = rows[0] if rows else {}
+        return {"value": first.get("value") if isinstance(first, dict) else None}
+
     request = Request(
-        url + "/rest/v1/rpc/" + function,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "apikey": api_key,
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-        },
+        url + "/rest/v1/" + PERSISTENT_STATE_TABLE + "?on_conflict=key",
+        data=json.dumps({"key": key, "value": value}, ensure_ascii=False).encode("utf-8"),
+        headers={**headers, "Prefer": "resolution=merge-duplicates,return=minimal"},
         method="POST",
     )
     with urlopen(request, timeout=15) as response:
-        raw = response.read()
-    return json.loads(raw.decode("utf-8")) if raw else []
+        response.read()
+    return {"value": value}
 
 
 def allow_local_state():
