@@ -319,6 +319,10 @@ class CourseSourceContractTests(unittest.TestCase):
 
 
 class PersistentStateTransportTests(unittest.TestCase):
+    def test_revision_log_failure_does_not_block_primary_save(self):
+        with patch.object(server, "append_revision", side_effect=server.HTTPError("https://state", 400, "invalid_key", None, None)):
+            self.assertIsNone(server.append_revision_best_effort("curriculum", "trainee_curriculum", {"courses": []}, "Руководитель"))
+
     def test_cloudflare_worker_allows_every_server_persistent_state_key(self):
         worker = (server.ROOT / "cloudflare" / "mavis-academy-state.js").read_text(encoding="utf-8")
         for key in server.PERSISTENT_STATE_KEYS.values():

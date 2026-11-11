@@ -693,6 +693,19 @@ def append_revision(scope, key, value, actor):
     write_auxiliary_state("revisions", REVISIONS_STORE, {"items": (items + [entry])[-30:]})
 
 
+def append_revision_best_effort(scope, key, value, actor):
+    """Keep an unavailable audit log from rejecting a valid content save.
+
+    The curriculum, document and catalogue each have their own durable keys.
+    Revision history is useful but secondary: an outage of that optional stream
+    must never make the editor tell a user that their material was not saved.
+    """
+    try:
+        append_revision(scope, key, value, actor)
+    except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError, ValueError):
+        print("Academy revision log unavailable; primary save continues", flush=True)
+
+
 def validate_library_catalog(payload):
     if not isinstance(payload, dict):
         raise ValueError("invalid_library_catalog")
@@ -1203,16 +1216,16 @@ class Handler(SimpleHTTPRequestHandler):
             scope, key, value = entry.get("scope"), entry.get("key"), entry.get("value")
             if scope == "document" and is_safe_knowledge_path(key) and isinstance(value, str):
                 current = read_document_overrides()
-                append_revision("document", key, current.get(key), access["name"])
+                append_revision_best_effort("document", key, current.get(key), access["name"])
                 current[key] = value
                 if not write_persistent_state("document_overrides", current):
                     write_local_json(DOCUMENT_OVERRIDES_STORE, current)
             elif scope == "catalog" and isinstance(value, dict):
-                append_revision("catalog", "library_catalog", read_library_catalog(), access["name"])
+                append_revision_best_effort("catalog", "library_catalog", read_library_catalog(), access["name"])
                 if not write_persistent_state("library_catalog", value):
                     write_local_json(LIBRARY_CATALOG_STORE, value)
             elif scope == "curriculum" and isinstance(value, dict):
-                append_revision("curriculum", "trainee_curriculum", read_trainee_curriculum(), access["name"])
+                append_revision_best_effort("curriculum", "trainee_curriculum", read_trainee_curriculum(), access["name"])
                 if not write_persistent_state("curriculum", value):
                     write_local_json(CURRICULUM_STORE, value)
             else:
@@ -1233,7 +1246,7 @@ class Handler(SimpleHTTPRequestHandler):
             if length < 2 or length > 700000:
                 return self.respond_json({"error": "invalid_size"}, 413)
             curriculum = validate_trainee_curriculum(json.loads(self.rfile.read(length)))
-            append_revision("curriculum", "trainee_curriculum", read_trainee_curriculum(), access_payload_from_header(self.headers).get("name", ""))
+            append_revision_best_effort("curriculum", "trainee_curriculum", read_trainee_curriculum(), access_payload_from_header(self.headers).get("name", ""))
             if not write_persistent_state("curriculum", curriculum):
                 write_local_json(CURRICULUM_STORE, curriculum)
             return self.respond_json({"saved": True})
@@ -1253,7 +1266,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond_json({"error": "invalid_size"}, 413)
             path, content = validate_document_override(json.loads(self.rfile.read(length)))
             overrides = read_document_overrides()
-            append_revision("document", path, overrides.get(path), access_payload_from_header(self.headers).get("name", ""))
+            append_revision_best_effort("document", path, overrides.get(path), access_payload_from_header(self.headers).get("name", ""))
             overrides[path] = content
             if not write_persistent_state("document_overrides", overrides):
                 write_local_json(DOCUMENT_OVERRIDES_STORE, overrides)
@@ -1273,7 +1286,7 @@ class Handler(SimpleHTTPRequestHandler):
             if length < 2 or length > 120000:
                 return self.respond_json({"error": "invalid_size"}, 413)
             catalog = validate_library_catalog(json.loads(self.rfile.read(length)))
-            append_revision("catalog", "library_catalog", read_library_catalog(), access_payload_from_header(self.headers).get("name", ""))
+            append_revision_best_effort("catalog", "library_catalog", read_library_catalog(), access_payload_from_header(self.headers).get("name", ""))
             if not write_persistent_state("library_catalog", catalog):
                 write_local_json(LIBRARY_CATALOG_STORE, catalog)
             return self.respond_json({"saved": True, "catalog": catalog})
