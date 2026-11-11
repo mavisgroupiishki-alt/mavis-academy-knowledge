@@ -56,6 +56,13 @@ MATERIAL_METADATA_STORE = ROOT / "data" / "material-metadata.json"
 REVISIONS_STORE = ROOT / "data" / "academy-revisions.json"
 ACADEMY_EVENTS_STORE = ROOT / "data" / "academy-events.json"
 PERSISTENT_STATE_CACHE = {}
+CLOUDFLARE_AUXILIARY_STATE_NAMES = {
+    "trainee_submissions",
+    "material_metadata",
+    "revisions",
+    "academy_events",
+}
+CLOUDFLARE_STATE_ENVELOPE = "mavis-academy-state-v1"
 # Training recordings are deliberately allowlisted: the proxy must never become
 # a generic URL fetcher or expose arbitrary Drive files.
 DRIVE_AUDIO_FILES = {
@@ -404,13 +411,49 @@ def persistent_state_request(method, key, value=None):
     return supabase_state_request(method, key, value)
 
 
+def cloudflare_document_state_envelope():
+    """Read the Cloudflare document key without confusing it with old data.
+
+    The deployed Worker already accepts the three original product keys.  New
+    operational state is kept beside document overrides inside that allowed
+    key, so a Worker rollout cannot make edits, assignments or the revision
+    journal unavailable.
+    """
+    raw = persistent_state_request("GET", PERSISTENT_STATE_KEYS["document_overrides"])
+    value = raw.get("value") if isinstance(raw, dict) else None
+    if isinstance(value, dict) and value.get("schema") == CLOUDFLARE_STATE_ENVELOPE:
+        documents = value.get("documents", {})
+        auxiliary = value.get("auxiliary", {})
+        return {
+            "schema": CLOUDFLARE_STATE_ENVELOPE,
+            "documents": documents if isinstance(documents, dict) else {},
+            "auxiliary": auxiliary if isinstance(auxiliary, dict) else {},
+        }
+    return {
+        "schema": CLOUDFLARE_STATE_ENVELOPE,
+        "documents": value if isinstance(value, dict) else {},
+        "auxiliary": {},
+    }
+
+
 def read_persistent_state(name):
-    key = PERSISTENT_STATE_KEYS[name]
     cached = PERSISTENT_STATE_CACHE.get(name)
     if cached and time.time() - cached["at"] < 3:
         return cached["value"]
-    if not persistent_state_config()[0]:
+    backend = persistent_state_config()[0]
+    if not backend:
         return None
+
+    if backend == "cloudflare" and (name == "document_overrides" or name in CLOUDFLARE_AUXILIARY_STATE_NAMES):
+        envelope = cloudflare_document_state_envelope()
+        if name == "document_overrides":
+            value = envelope["documents"]
+        else:
+            value = envelope["auxiliary"].get(name)
+        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+        return value
+
+    key = PERSISTENT_STATE_KEYS[name]
     result = persistent_state_request("GET", key)
     value = result.get("value") if isinstance(result, dict) else None
     PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
@@ -418,9 +461,17 @@ def read_persistent_state(name):
 
 
 def write_persistent_state(name, value):
-    key = PERSISTENT_STATE_KEYS[name]
-    if persistent_state_config()[0]:
-        persistent_state_request("POST", key, value)
+    backend = persistent_state_config()[0]
+    if backend:
+        if backend == "cloudflare" and (name == "document_overrides" or name in CLOUDFLARE_AUXILIARY_STATE_NAMES):
+            envelope = cloudflare_document_state_envelope()
+            if name == "document_overrides":
+                envelope["documents"] = value
+            else:
+                envelope["auxiliary"][name] = value
+            persistent_state_request("POST", PERSISTENT_STATE_KEYS["document_overrides"], envelope)
+        else:
+            persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], value)
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
         return True
     if not allow_local_state():
