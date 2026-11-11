@@ -203,7 +203,7 @@
     return {...source,id,eyebrow:'День 01 · материал стажировки',sources:passport?[passport]:[],attachments:[],sourceCourse:'',fallbackContent:'',assignment:{title:'Конспект по продукту',minLength:350,prompt:'По полному паспорту продукта опишите: что это за документ; кому и когда он нужен; какие вводные нужно собрать; как проходит работа; какой конкретный следующий шаг вы согласуете с клиентом. Не используйте реальные данные клиентов.'}};
   };
   const TRAINEE_SHEET_COURSES = [
-    traineeSheetTile('tr-d1-company','О компании','День 01 · таблица стажировки','Изучите, чем занимается Mavis Group и какой результат получает клиент.',['Опишите своими словами, чем занимается компания.','Запишите, какую проблему клиента решают разрешительные документы и сопровождение.'],'sales',['09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md']),
+    traineeSheetTile('tr-d1-company','Учебный маршрут — Mavis Group: компания и словарь','День 01 · учебный маршрут','Изучите, чем занимается Mavis Group, как объяснять ценность клиенту и какие рабочие сокращения использует команда.',['Опишите своими словами, чем занимается компания.','Запишите, какую проблему клиента решают разрешительные документы и сопровождение.'],'sales',['09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md']),
     traineeEmbeddedCourse('tr-spk','tr-d1-spk'),
     traineeEmbeddedCourse('tr-att-st','tr-d1-attestation-st'),
     traineeEmbeddedCourse('tr-att-gs','tr-d1-attestation-gs'),
@@ -275,11 +275,14 @@
   // country-specific ISO references and other working sources stay in staff
   // tiles only.  Apply this to already saved versions of the curriculum too.
   const TRAINEE_COURSE_IDS=new Set(TRAINEE_SHEET_COURSES.map(course=>course.id));
-  const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>
-    TRAINEE_COURSE_IDS.has(course?.id)
-      ? {...course,sources:TRAINEE_INTERNAL_SOURCE_PATHS[course.id]?[TRAINEE_INTERNAL_SOURCE_PATHS[course.id]]:(course.sources||[]),attachments:[],sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[course.id]||course.sourceCourse||'',fallbackContent:''}
-      : course
-  );
+  const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>{
+    if(!TRAINEE_COURSE_IDS.has(course?.id))return course;
+    const legacyCompany=course.id==='tr-d1-company'&&(!course.title||course.title==='О компании');
+    // Only migrate the former placeholder. A title entered by the leader is
+    // never overwritten on reload.
+    const normalized=legacyCompany?{...course,title:'Учебный маршрут — Mavis Group: компания и словарь',eyebrow:'День 01 · учебный маршрут',lead:'Изучите, чем занимается Mavis Group, как объяснять ценность клиенту и какие рабочие сокращения использует команда.'}:course;
+    return {...normalized,sources:normalized.isCustomContent?[]:(TRAINEE_INTERNAL_SOURCE_PATHS[normalized.id]?[TRAINEE_INTERNAL_SOURCE_PATHS[normalized.id]]:(normalized.sources||[])),attachments:[],sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[normalized.id]||normalized.sourceCourse||'',fallbackContent:''};
+  });
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);
   let traineeDays = TRAINEE_DAYS;
   // The full base is an ordinary, read-only tile for every role.  Leader-only
@@ -859,7 +862,7 @@
   }
   function readerTraineeLegacy(course){
     const completed=lessonDone(course,0),path=(course.sources||[])[0]||'';
-    const leaderPreview=(access?.role||state.role)==='leader'&&state.audience==='trainee';
+    const leaderPreview=canEditBase()&&isTraineeWorkspace();
     const editing=leaderPreview&&state.traineeTileEditing;
     // The day-one product cards are backed by the imported source passports.
     // Do not let the short editor preview replace those source documents in
@@ -928,7 +931,7 @@
     const target=document.getElementById('course-document'); if (!target) return;
     if(course.content&&!(course.sources||[]).length){target.innerHTML=safeRichHtml(course.content);return;}
     const isCurrent=()=>requestId===state.documentRequestId&&state.page==='course'&&state.course===course.id&&state.tab===index;
-    try { const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()}); if(response.status===401){ state.login=true; access=null; sessionStorage.removeItem(accessKey); return render(); } if(!response.ok) throw Error(`Код ${response.status}`); const data=await response.json(); if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) currentTarget.innerHTML=readableDocument(data,path,state.referenceView); } }
+    try { const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()}); if(response.status===401){ state.login=true; access=null; sessionStorage.removeItem(accessKey); return render(); } if(!response.ok) throw Error(`Код ${response.status}`); const data=await response.json(); if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) { currentTarget.innerHTML=readableDocument(data,path,state.referenceView); if(canEditBase()&&isTraineeWorkspace()&&state.traineeTileEditing){currentTarget.contentEditable='true';currentTarget.classList.add('trainee-live-source-edit');currentTarget.addEventListener('input',()=>window.academyLiveTraineeDocument(currentTarget.innerHTML));} } } }
     catch (error) { if(isCurrent()) { const currentTarget=document.getElementById('course-document'), fallback=String(course.fallbackContent||'').trim(), fallbackHtml=fallback?(fallback.includes('<')?safeRichHtml(fallback):markdown(fallback)):''; if(currentTarget) currentTarget.innerHTML=`<div class="course-error"><b>Материал временно недоступен.</b><span>Раздел «${esc(sourceTitle(path))}»: ${esc(error.message||'неизвестная ошибка')}. Попробуйте загрузить ещё раз.</span><button onclick="academyReloadCourse()">Загрузить снова</button></div>${fallbackHtml?`<section class="course-document course-fallback"><h3>Краткий резервный материал</h3>${fallbackHtml}</section>`:''}`; } }
   }
   async function loadPresentationDocument() {
@@ -1214,18 +1217,18 @@
     render();
   };
   window.academyToggleTraineeTileEdit=()=>{
-    if((access?.role||state.role)!=='leader'||!isTraineeWorkspace())return;
+    if(!canEditBase()||!isTraineeWorkspace())return;
     state.traineeTileEditing=!state.traineeTileEditing;
     state.curriculumError='';
     render();
   };
   window.academyLiveTraineeField=(field,value)=>{
-    if((access?.role||state.role)!=='leader'||!isTraineeWorkspace())return;
+    if(!canEditBase()||!isTraineeWorkspace())return;
     const course=current();if(!course)return;
     course[field]=field==='content'?safeRichHtml(value):String(value||'').trim();
   };
   window.academySetTraineeTileDay=value=>{
-    if((access?.role||state.role)!=='leader'||!isTraineeWorkspace())return;
+    if(!canEditBase()||!isTraineeWorkspace())return;
     const course=current();if(!course)return;
     traineeDays.forEach(day=>{day.courseIds=day.courseIds.filter(id=>id!==course.id);day.reviewCourseIds=(day.reviewCourseIds||[]).filter(id=>id!==course.id);});
     const day=value===''?null:traineeDays[Number(value)];
@@ -1233,11 +1236,20 @@
     if(day)day.courseIds.push(course.id);
   };
   window.academySaveTraineeTile=async()=>{
-    if((access?.role||state.role)!=='leader'||!isTraineeWorkspace())return;
+    if(!canEditBase()||!isTraineeWorkspace())return;
     const course=current();
     if(!course)return;
     if(!String(course.title||'').trim()){state.curriculumError='Укажите название плитки перед сохранением.';return render();}
     await window.academySaveCurriculum();
+  };
+  window.academyLiveTraineeDocument=html=>{
+    if(!canEditBase()||!isTraineeWorkspace())return;
+    const course=current();if(!course)return;
+    // Editing an imported block turns this tile into a self-contained copy.
+    // That is intentional: the saved view is precisely what the trainee saw.
+    course.content=safeRichHtml(html);
+    course.sources=[];
+    course.isCustomContent=true;
   };
   window.academyRemoveTile=index=>{syncCurriculumEditor();const course=traineeCourses[index];if(!course)return;traineeCourses.splice(index,1);traineeDays.forEach(day=>{day.courseIds=day.courseIds.filter(id=>id!==course.id);day.reviewCourseIds=(day.reviewCourseIds||[]).filter(id=>id!==course.id)});render();};
   window.academyMoveTileInCurriculum=(index,direction)=>{syncCurriculumEditor();const course=traineeCourses[index],day=traineeDays.find(item=>item.courseIds.includes(course?.id));if(!course||!day)return;const from=day.courseIds.indexOf(course.id),to=from+direction;if(to<0||to>=day.courseIds.length)return;[day.courseIds[from],day.courseIds[to]]=[day.courseIds[to],day.courseIds[from]];render();};
