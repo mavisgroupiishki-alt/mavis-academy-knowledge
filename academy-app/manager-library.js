@@ -125,8 +125,8 @@
     'tr-d4-call-analysis':{title:'Разбор хорошего и плохого звонка',minLength:400,prompt:'Разберите один хороший и один плохой звонок. По каждому отдельно напишите: 1) две конкретные фразы или действия менеджера; 2) что в них было сильным или ошибочным; 3) как сформулировать ошибочный момент лучше; 4) какой следующий шаг, дата и ответственный должны были прозвучать в конце.'},
     'tr-d4-exam':{title:'Итоговая работа: диагностика и следующий шаг',minLength:550,prompt:'Разберите учебный кейс «Рога и копыта». В одном ответе по пунктам: 1) напишите пять вопросов для первичной диагностики; 2) укажите, какие данные по работам, объекту, людям и документам уже подтверждены, а каких не хватает; 3) предложите безопасный маршрут без гарантии выдачи; 4) напишите две фразы для объяснения пользы клиенту; 5) зафиксируйте следующий шаг в формате «кто — что делает — до какой даты — как связываемся». Не используйте реальные данные клиентов.'}
   };
-  const traineeSheetTile=(id,title,eyebrow,lead,items,practice='sales')=>({
-    id,icon:'✓',color:'teal',title,eyebrow,lead,sources:[],attachments:[],practice,
+  const traineeSheetTile=(id,title,eyebrow,lead,items,practice='sales',sources=[])=>({
+    id,icon:'✓',color:'teal',title,eyebrow,lead,sources,attachments:[],practice,
     check:COURSES.find(course=>course.id===(practice==='bitrix'?'bitrix':practice==='spk'?'spk':practice==='iso-suot'?'iso-suot':'sales'))?.check||COURSES[0].check,
     assignment:TRAINEE_ASSIGNMENTS[id]||{title:'Обязательное задание',prompt:items.join('\n'),minLength:80},
     content:traineeLesson(title,lead,[...(TRAINEE_MATERIALS[id]||[{title:'Материал',text:'Изучите тему, проверьте входные данные и зафиксируйте безопасный следующий шаг.'}]),{title:'Обязательное задание на сегодня',items}])
@@ -152,7 +152,7 @@
     return {...source,id,eyebrow:'День 01 · материал стажировки',sources:passport?[passport]:[],attachments:[],sourceCourse:'',fallbackContent:'',assignment:{title:'Конспект по продукту',minLength:350,prompt:'По полному паспорту продукта опишите: что это за документ; кому и когда он нужен; какие вводные нужно собрать; как проходит работа; какой конкретный следующий шаг вы согласуете с клиентом. Не используйте реальные данные клиентов.'}};
   };
   const TRAINEE_SHEET_COURSES = [
-    traineeSheetTile('tr-d1-company','О компании','День 01 · таблица стажировки','Изучите, чем занимается Mavis Group и какой результат получает клиент.',['Опишите своими словами, чем занимается компания.','Запишите, какую проблему клиента решают разрешительные документы и сопровождение.']),
+    traineeSheetTile('tr-d1-company','О компании','День 01 · таблица стажировки','Изучите, чем занимается Mavis Group и какой результат получает клиент.',['Опишите своими словами, чем занимается компания.','Запишите, какую проблему клиента решают разрешительные документы и сопровождение.'],'sales',['09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md']),
     traineeEmbeddedCourse('tr-spk','tr-d1-spk'),
     traineeEmbeddedCourse('tr-att-st','tr-d1-attestation-st'),
     traineeEmbeddedCourse('tr-att-gs','tr-d1-attestation-gs'),

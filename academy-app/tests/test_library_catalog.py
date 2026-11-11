@@ -178,6 +178,9 @@ class CourseSourceContractTests(unittest.TestCase):
         for passport in passports:
             self.assertIn(passport, source)
             self.assertTrue((server.KNOWLEDGE_ROOT / "02 PRODUCTS" / passport).is_file(), passport)
+        company_path = "09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md"
+        self.assertIn(company_path, source)
+        self.assertTrue((server.KNOWLEDGE_ROOT / company_path).is_file())
 
     def test_trainee_default_contains_only_sheet_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
