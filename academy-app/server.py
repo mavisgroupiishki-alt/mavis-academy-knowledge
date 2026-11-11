@@ -336,8 +336,16 @@ def supabase_state_request(method, key, value=None):
         },
         method="POST",
     )
-    with urlopen(request, timeout=15) as response:
-        raw = response.read()
+    try:
+        with urlopen(request, timeout=15) as response:
+            raw = response.read()
+    except HTTPError as exc:
+        # Do not log the request body: it includes the private state token.
+        print(f"Academy Supabase state store failed: HTTP {exc.code}", flush=True)
+        raise
+    except URLError:
+        print("Academy Supabase state store failed: network error", flush=True)
+        raise
     result = json.loads(raw.decode("utf-8")) if raw else []
     if isinstance(result, list):
         first = result[0] if result else {}
