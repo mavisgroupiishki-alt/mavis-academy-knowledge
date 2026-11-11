@@ -1,5 +1,6 @@
 import sys
 import json
+import re
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -36,6 +37,24 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         self.assertEqual(catalog["custom"][0]["id"], "library-custom-draft")
         self.assertEqual(catalog["custom"][0]["sources"], [])
         self.assertEqual(catalog["custom"][0]["content"], "")
+
+    def test_allows_an_unpublished_blank_trainee_tile_and_a_review_tile(self):
+        curriculum = server.validate_trainee_curriculum({
+            "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
+            "courses": [
+                {"id": "blank-draft", "title": "", "lead": "", "eyebrow": "", "content": ""},
+                {"id": "repeat-tile", "title": "Повторение", "lead": "", "eyebrow": "", "content": "<p>Текст</p>"},
+            ],
+            "days": [
+                {"courseIds": [], "reviewCourseIds": []},
+                {"courseIds": ["repeat-tile"], "reviewCourseIds": ["repeat-tile"]},
+                {"courseIds": [], "reviewCourseIds": []},
+                {"courseIds": [], "reviewCourseIds": []},
+            ],
+        })
+
+        self.assertEqual(curriculum["courses"][0]["id"], "blank-draft")
+        self.assertEqual(curriculum["days"][1]["reviewCourseIds"], ["repeat-tile"])
 
     def test_keeps_a_deleted_custom_tile_in_archive_for_restore(self):
         catalog = server.validate_library_catalog({
@@ -99,6 +118,13 @@ class LibraryCatalogValidationTests(unittest.TestCase):
 
 
 class CourseSourceContractTests(unittest.TestCase):
+    def test_server_and_client_use_the_same_trainee_plan_version(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        client_version = re.search(r"TRAINEE_PLAN_VERSION='([^']+)'", source)
+
+        self.assertIsNotNone(client_version)
+        self.assertEqual(server.CURRENT_TRAINEE_PLAN_VERSION, client_version.group(1))
+
     def test_staff_roles_share_library_access_and_test_hub(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 

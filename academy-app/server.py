@@ -46,7 +46,7 @@ PERSISTENT_STATE_KEYS = {
     "revisions": "academy:revisions",
     "academy_events": "academy:events",
 }
-CURRENT_TRAINEE_PLAN_VERSION = "sales-internship-sheet-2026-11-11.4"
+CURRENT_TRAINEE_PLAN_VERSION = "sales-internship-sheet-2026-11-11.5"
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
 DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
 LIBRARY_CATALOG_STORE = ROOT / "data" / "library-catalog.json"
@@ -822,6 +822,9 @@ def validate_trainee_curriculum(payload):
         if not isinstance(day, dict) or not isinstance(day.get("courseIds"), list):
             raise ValueError("invalid_curriculum")
         if any(str(course_id) not in ids for course_id in day["courseIds"]):
+            raise ValueError("invalid_curriculum")
+        review_ids = day.get("reviewCourseIds", [])
+        if not isinstance(review_ids, list) or any(str(course_id) not in ids for course_id in review_ids):
             raise ValueError("invalid_curriculum")
     return {"courses": courses, "days": days, "planVersion": plan_version}
 
