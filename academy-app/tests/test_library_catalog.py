@@ -500,6 +500,20 @@ class PersistentStateTransportTests(unittest.TestCase):
             self.assertEqual(stored["value"]["courses"], [])
             self.assertEqual(stored["value"][server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY], values)
 
+    def test_cloudflare_reads_a_legacy_editor_value_until_it_is_saved_to_curriculum(self):
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_WRITE_TOKEN": "server-only-token",
+        }, clear=False), patch.object(
+            server, "cloudflare_curriculum_auxiliary_envelope", return_value={}
+        ), patch.object(
+            server, "persistent_state_request", return_value={"value": {"legacy": "editor content"}}
+        ) as request:
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertEqual(server.read_persistent_state("document_overrides"), {"legacy": "editor content"})
+            request.assert_called_once_with("GET", server.PERSISTENT_STATE_KEYS["document_overrides"])
+
 
 if __name__ == "__main__":
     unittest.main()

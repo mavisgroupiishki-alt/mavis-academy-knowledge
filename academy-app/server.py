@@ -437,6 +437,14 @@ def read_persistent_state(name):
         envelope = cloudflare_curriculum_auxiliary_envelope()
         auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
         value = auxiliary.get(name) if isinstance(auxiliary, dict) else None
+        # Earlier releases attempted to save document edits and the catalogue
+        # under standalone keys.  Read that durable legacy value while the
+        # envelope has not yet been written, so deploying this fix never hides
+        # an existing editor change.  The next normal save migrates it into
+        # the curriculum envelope.
+        if value is None:
+            legacy = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+            value = legacy.get("value") if isinstance(legacy, dict) else None
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
         return value
 
