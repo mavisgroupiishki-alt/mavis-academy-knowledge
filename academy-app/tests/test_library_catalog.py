@@ -300,7 +300,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         for key in server.PERSISTENT_STATE_KEYS.values():
             self.assertIn(f'"{key}"', worker)
 
-    def test_state_request_uses_server_only_table_access_and_never_exposes_access_token_in_url(self):
+    def test_state_request_uses_guarded_rpc_and_never_exposes_access_token_in_url(self):
         captured = {}
 
         class Response:
@@ -327,8 +327,7 @@ class PersistentStateTransportTests(unittest.TestCase):
             payload = server.persistent_state_request("GET", "academy:library-catalog")
 
         self.assertEqual(payload, {"value": {"custom": []}})
-        self.assertEqual(captured["url"], "https://example.supabase.co/rest/v1/mavis_dashboard_kv?select=value&key=eq.academy%3Alibrary-catalog")
-        self.assertEqual(captured["headers"]["Authorization"], "Bearer public-key")
+        self.assertEqual(captured["url"], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
         self.assertNotIn("server-only-token", captured["url"])
 
     def test_cloudflare_state_request_uses_header_token_and_does_not_expose_it_in_url(self):
@@ -397,7 +396,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(payload, {"value": {"items": []}})
         self.assertEqual(len(requested_urls), 2)
         self.assertIn("workers.dev/state?key=academy%3Atrainee-submissions", requested_urls[0])
-        self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/mavis_dashboard_kv?select=value&key=eq.academy%3Atrainee-submissions")
+        self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
 
 
 if __name__ == "__main__":
