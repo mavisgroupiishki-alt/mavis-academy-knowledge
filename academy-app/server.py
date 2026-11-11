@@ -600,6 +600,12 @@ def is_safe_rich_text(value):
 def read_trainee_curriculum():
     remote = read_persistent_state("curriculum")
     if remote is not None:
+        # The Cloudflare record also carries editor state under the auxiliary
+        # envelope.  It is storage infrastructure, never curriculum data.
+        # Returning it here used to make every revision snapshot recursively
+        # contain the previous snapshots, quickly growing beyond request and
+        # database limits.
+        remote = trainee_curriculum_core(remote)
         # Versions created before the approved four-day programme can contain
         # a partial Day 1. Never send them back to a fresh client session.
         return remote if (
@@ -624,6 +630,13 @@ def read_trainee_curriculum():
     except (OSError, json.JSONDecodeError):
         pass
     return None
+
+
+def trainee_curriculum_core(value):
+    """Return just the editable programme, without the state-store envelope."""
+    if not isinstance(value, dict):
+        return value
+    return {key: value.get(key) for key in ("courses", "days", "planVersion")}
 
 
 def read_document_overrides():
@@ -691,6 +704,18 @@ def append_revision(scope, key, value, actor):
         return
     revisions = read_auxiliary_state("revisions", REVISIONS_STORE, {"items": []})
     items = revisions.get("items", []) if isinstance(revisions, dict) else []
+    # Repair old recursive curriculum snapshots during the next normal save.
+    # Revision history remains useful, but it must not embed the state envelope
+    # (which includes revision history itself).
+    cleaned_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        cleaned = dict(item)
+        if cleaned.get("scope") == "curriculum":
+            cleaned["value"] = trainee_curriculum_core(cleaned.get("value"))
+        cleaned_items.append(cleaned)
+    value = trainee_curriculum_core(value) if scope == "curriculum" else value
     entry = {
         "id": secrets.token_urlsafe(10),
         "scope": scope,
@@ -699,7 +724,7 @@ def append_revision(scope, key, value, actor):
         "actor": str(actor or "Сотрудник")[:80],
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    write_auxiliary_state("revisions", REVISIONS_STORE, {"items": (items + [entry])[-30:]})
+    write_auxiliary_state("revisions", REVISIONS_STORE, {"items": (cleaned_items + [entry])[-30:]})
 
 
 def append_revision_best_effort(scope, key, value, actor):

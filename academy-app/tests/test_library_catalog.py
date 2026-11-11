@@ -56,6 +56,16 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         self.assertEqual(curriculum["courses"][0]["id"], "blank-draft")
         self.assertEqual(curriculum["days"][1]["reviewCourseIds"], ["repeat-tile"])
 
+    def test_keeps_hidden_blank_trainee_draft_when_saving_programme(self):
+        curriculum = server.validate_trainee_curriculum({
+            "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
+            "courses": [{"id": "leader-draft", "title": "", "lead": "", "eyebrow": "", "content": "", "hidden": True}],
+            "days": [{"courseIds": [], "reviewCourseIds": []} for _ in range(4)],
+        })
+
+        self.assertTrue(curriculum["courses"][0]["hidden"])
+        self.assertEqual(curriculum["days"][0]["courseIds"], [])
+
     def test_trainee_curriculum_limit_accepts_the_current_live_program_size(self):
         self.assertGreater(server.MAX_TRAINEE_CURRICULUM_BYTES, 831_889)
 
@@ -119,6 +129,21 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         with patch.object(server, "read_persistent_state", return_value=stale_program):
             self.assertIsNone(server.read_trainee_curriculum())
 
+    def test_curriculum_reader_never_returns_the_storage_envelope(self):
+        programme = {
+            "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
+            "courses": [{"id": "spk", "title": "СПК"}],
+            "days": [{"courseIds": ["spk"]} for _ in range(4)],
+            "_mavis_academy_auxiliary": {"revisions": {"items": [{"value": "large snapshot"}]}},
+        }
+
+        with patch.object(server, "read_persistent_state", return_value=programme):
+            self.assertEqual(server.read_trainee_curriculum(), {
+                "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
+                "courses": [{"id": "spk", "title": "СПК"}],
+                "days": [{"courseIds": ["spk"]} for _ in range(4)],
+            })
+
 
 class CourseSourceContractTests(unittest.TestCase):
     def test_server_and_client_use_the_same_trainee_plan_version(self):
@@ -127,6 +152,14 @@ class CourseSourceContractTests(unittest.TestCase):
 
         self.assertIsNotNone(client_version)
         self.assertEqual(server.CURRENT_TRAINEE_PLAN_VERSION, client_version.group(1))
+
+    def test_trainee_editor_saves_placement_and_repetition_together(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("course.hidden=!day", source)
+        self.assertIn("Показать в «Повторить»", source)
+        self.assertIn("Скрыть у стажёра", source)
+        self.assertIn("Сервер не подтвердил сохранение программы.", source)
 
     def test_staff_roles_share_library_access_and_test_hub(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
