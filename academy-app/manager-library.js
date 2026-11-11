@@ -143,6 +143,16 @@
     'tr-suot-cert':'02 PRODUCTS/Паспорт продукта — 0303 Сертификат СУОТ 45001.md',
     'tr-suot-periodic':'02 PRODUCTS/Паспорт продукта — 0304 Периодика СУОТ 45001.md'
   };
+  const TRAINEE_DAY_ONE_SOURCE_PATHS={
+    'tr-d1-company':'09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md',
+    'tr-d1-spk':TRAINEE_PRODUCT_PASSPORTS['tr-spk'],
+    'tr-d1-attestation-st':TRAINEE_PRODUCT_PASSPORTS['tr-att-st'],
+    'tr-d1-attestation-gs':TRAINEE_PRODUCT_PASSPORTS['tr-att-gs'],
+    'tr-d1-iso9001':TRAINEE_PRODUCT_PASSPORTS['tr-iso-cert'],
+    'tr-d1-iso9001-periodic':TRAINEE_PRODUCT_PASSPORTS['tr-iso-periodic'],
+    'tr-d1-suot45001':TRAINEE_PRODUCT_PASSPORTS['tr-suot-cert'],
+    'tr-d1-suot45001-periodic':TRAINEE_PRODUCT_PASSPORTS['tr-suot-periodic']
+  };
   const traineeEmbeddedCourse=(sourceId,id)=>{
     // Day-one product lessons live in the foundation collection.  Looking
     // only in TRAINEE_COURSES produced seven empty objects, so the catalogue
@@ -226,7 +236,7 @@
   const TRAINEE_COURSE_IDS=new Set(TRAINEE_SHEET_COURSES.map(course=>course.id));
   const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>
     TRAINEE_COURSE_IDS.has(course?.id)
-      ? {...course,attachments:[],sourceCourse:'',fallbackContent:''}
+      ? {...course,sources:TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]?[TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]]:(course.sources||[]),attachments:[],sourceCourse:'',fallbackContent:''}
       : course
   );
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);
@@ -291,6 +301,10 @@
   const sourceIndexesFor = (course, reference=state.referenceView) => {
     if(!course)return [];
     const all=course.sources.map((_,index)=>index);
+    // У стажёра паспорт является самим учебным материалом, а не отдельной
+    // «справочной» вкладкой. Иначе полные документы скрывались за пустым
+    // учебным маршрутом и вновь отображался краткий пересказ.
+    if((access?.role||state.role)==='trainee')return reference?[]:all;
     const passports=all.filter(index=>isReferenceMaterial(course.sources[index]));
     if(reference)return passports;
     return passports.length?all.filter(index=>!isReferenceMaterial(course.sources[index])):all;

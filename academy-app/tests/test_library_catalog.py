@@ -181,6 +181,9 @@ class CourseSourceContractTests(unittest.TestCase):
         company_path = "09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md"
         self.assertIn(company_path, source)
         self.assertTrue((server.KNOWLEDGE_ROOT / company_path).is_file())
+        self.assertIn("const TRAINEE_DAY_ONE_SOURCE_PATHS=", source)
+        self.assertIn("TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]", source)
+        self.assertIn("if((access?.role||state.role)==='trainee')return reference?[]:all", source)
 
     def test_trainee_default_contains_only_sheet_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
