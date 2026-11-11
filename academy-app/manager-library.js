@@ -1072,7 +1072,14 @@
   window.academyPickRole=role=>{state.role=role;state.error='';render();};
   window.academyLoginMode=mode=>{state.loginMode=mode;state.error='';render();};
   window.academyCloseLogin=()=>{state.error='';render();};
-  async function loadCurriculum(){try{const response=await fetch('/api/academy/trainee-curriculum',{headers:authHeaders()});if(!response.ok)return;const data=await response.json();if(data.planVersion===TRAINEE_PLAN_VERSION&&Array.isArray(data.courses)&&Array.isArray(data.days)){traineeCourses=bindTraineeSources(data.courses);traineeDays=data.days;}}catch(_){}}
+  const hasCompleteTraineePlan=data=>Boolean(
+    data&&data.planVersion===TRAINEE_PLAN_VERSION&&Array.isArray(data.courses)&&Array.isArray(data.days)&&
+    TRAINEE_DAYS.every((requiredDay,index)=>{
+      const savedDay=data.days[index];
+      return savedDay&&Array.isArray(savedDay.courseIds)&&requiredDay.courseIds.every(id=>savedDay.courseIds.includes(id));
+    })&&TRAINEE_SHEET_COURSES.every(requiredCourse=>data.courses.some(course=>course?.id===requiredCourse.id&&String(course.content||'').trim()))
+  );
+  async function loadCurriculum(){try{const response=await fetch('/api/academy/trainee-curriculum',{headers:authHeaders()});if(!response.ok)return;const data=await response.json();if(hasCompleteTraineePlan(data)){traineeCourses=bindTraineeSources(data.courses);traineeDays=data.days;}}catch(_){}}
   async function loadLibraryCatalog(){if(access?.role==='trainee')return;try{const response=await fetch('/api/academy/library-catalog',{headers:authHeaders()});if(!response.ok)return;const data=await response.json();state.libraryCatalog=data.catalog||state.libraryCatalog;state.librarySourcePaths=data.paths||[];}catch(_){} }
   window.academyLogin=async(savedLogin)=>{const password=document.getElementById('academy-password')?.value||((savedLogin||account?.login)?(state.role==='leader'?'1111':'2222'):''),name=(savedLogin||document.getElementById('academy-name')?.value?.trim()||'');state.error='';if(name.length<2){state.error='Придумайте логин — минимум 2 символа.';return render();}if(!password){state.error='Введите пароль.';return render();}try{const response=await fetch('/api/access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:state.role,password,name})});if(!response.ok){state.error=response.status===401?'Пароль не подошёл. Проверьте роль и повторите.':response.status===400?'Проверьте логин.':'Вход пока не настроен на сервере.';return render();}access=await response.json();account={login:name,role:state.role};localStorage.setItem(accountKey,JSON.stringify(account));sessionStorage.setItem(accessKey,JSON.stringify(access));await Promise.all([loadCurriculum(),loadLibraryCatalog()]);state.login=false;const tile=new URLSearchParams(location.hash.slice(1)).get('tile');if(tile&&coursesFor().some(course=>course.id===tile))return academyOpen(tile);render();}catch(_){state.error='Сервер входа временно недоступен.';render();}};
   window.academyUseSavedAccount=()=>{if(!account?.login)return;state.role=account.role||'trainee';academyLogin(account.login);};
