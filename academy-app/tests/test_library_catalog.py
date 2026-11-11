@@ -464,7 +464,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("workers.dev/state?key=academy%3Atrainee-submissions", requested_urls[0])
         self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
 
-    def test_cloudflare_keeps_auxiliary_state_inside_the_existing_curriculum_key(self):
+    def test_cloudflare_keeps_all_editor_state_inside_the_existing_curriculum_key(self):
         stored = {"value": {"courses": [], "days": [], "planVersion": "test"}}
 
         class Response:
@@ -487,12 +487,18 @@ class PersistentStateTransportTests(unittest.TestCase):
             "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
             "ACADEMY_STATE_WRITE_TOKEN": "server-only-token",
         }, clear=False), patch.object(server, "urlopen", fake_urlopen):
-            server.PERSISTENT_STATE_CACHE.clear()
-            self.assertTrue(server.write_persistent_state("revisions", {"items": [{"id": "revision-1"}]}))
-            server.PERSISTENT_STATE_CACHE.clear()
-            self.assertEqual(server.read_persistent_state("revisions"), {"items": [{"id": "revision-1"}]})
+            values = {
+                "revisions": {"items": [{"id": "revision-1"}]},
+                "document_overrides": {"09 SOP/valid.md": "<p>Сохранённый текст</p>"},
+                "library_catalog": {"hidden": [], "overrides": {}, "custom": [], "archived": []},
+            }
+            for name, value in values.items():
+                server.PERSISTENT_STATE_CACHE.clear()
+                self.assertTrue(server.write_persistent_state(name, value))
+                server.PERSISTENT_STATE_CACHE.clear()
+                self.assertEqual(server.read_persistent_state(name), value)
             self.assertEqual(stored["value"]["courses"], [])
-            self.assertEqual(stored["value"][server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY]["revisions"], {"items": [{"id": "revision-1"}]})
+            self.assertEqual(stored["value"][server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY], values)
 
 
 if __name__ == "__main__":

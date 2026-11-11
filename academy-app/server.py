@@ -56,12 +56,12 @@ MATERIAL_METADATA_STORE = ROOT / "data" / "material-metadata.json"
 REVISIONS_STORE = ROOT / "data" / "academy-revisions.json"
 ACADEMY_EVENTS_STORE = ROOT / "data" / "academy-events.json"
 PERSISTENT_STATE_CACHE = {}
-CLOUDFLARE_AUXILIARY_STATE_NAMES = {
-    "trainee_submissions",
-    "material_metadata",
-    "revisions",
-    "academy_events",
-}
+# The live Worker only accepts the original curriculum key.  Every other
+# durable Academy state, including document edits and catalogue edits, must
+# therefore live below that key.  Sending document_overrides or
+# library_catalog to their later standalone keys is what caused the editor to
+# report temporary storage failures even though curriculum itself could save.
+CLOUDFLARE_AUXILIARY_STATE_NAMES = set(PERSISTENT_STATE_KEYS) - {"curriculum"}
 CLOUDFLARE_STATE_ENVELOPE = "mavis-academy-state-v1"
 CLOUDFLARE_AUXILIARY_ENVELOPE_KEY = "_mavis_academy_auxiliary"
 # Training recordings are deliberately allowlisted: the proxy must never become

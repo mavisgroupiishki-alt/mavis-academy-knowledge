@@ -549,7 +549,15 @@
       if(/^\|/.test(lines[index])){const table=[];while(index<lines.length&&/^\|/.test(lines[index]))table.push(lines[index++]);output.push(sheetTable(table));continue;}
       const image=/^!\[([^\]]*)\]\(([^)]+)\)\s*$/.exec(lines[index].trim());if(image){index+=1;output.push(courseImage(image[1],image[2]));continue;}
       const line=cleanSourceLine(lines[index++]); if(!line||isHiddenContactLine(line)||/^#{0,3}\s*(первичный источник|полное содержимое из источника|полный текст из источника)$/i.test(line)||/^(направляю|направляем)\s+актуальн\w*\s+форм\w*/i.test(line)) continue;
-      if(/^#{1,6}\s/.test(line)){const heading=line.replace(/^#{1,6}\s/,'');output.push(`<h2 class="course-section-heading">${esc(heading.replace(/^Лист:\s*/,''))}</h2>`);continue;}
+      const headingMatch=/^(#{1,6})\s+(.+)$/.exec(line);
+      if(headingMatch){
+        const level=headingMatch[1].length;
+        const heading=headingMatch[2].replace(/^Лист:\s*/,'');
+        const tag=level===1?'h2':'h3';
+        const className=level===1?'course-document-title':'course-section-heading';
+        output.push(`<${tag} class="${className}">${esc(heading)}</${tag}>`);
+        continue;
+      }
       const numbered=/^(\d+)[.)]\s+(.+)$/.exec(line);
       if(numbered){
         const items=[numbered];
