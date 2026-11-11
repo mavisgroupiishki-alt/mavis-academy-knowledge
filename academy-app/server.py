@@ -301,6 +301,45 @@ def persistent_state_config():
     return (backend, url, api_key, access_token) if url and api_key and access_token else (None, None, None, None)
 
 
+def supabase_state_fallback_config():
+    """Return the already configured results store as a durable state fallback.
+
+    The Academy used this Supabase RPC store before the Cloudflare migration.
+    Keeping it as a server-side fallback means an out-of-date Worker cannot
+    make trainee results or the governance screen disappear.  It is never
+    exposed to the browser and is only consulted when Cloudflare rejects or
+    cannot read a state key.
+    """
+    url = os.getenv("ACADEMY_RESULTS_URL", "").rstrip("/")
+    api_key = os.getenv("ACADEMY_RESULTS_SERVICE_KEY", "")
+    access_token = os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", "")
+    return (url, api_key, access_token) if url and api_key and access_token else (None, None, None)
+
+
+def supabase_state_request(method, key, value=None):
+    """Call the legacy state RPC without changing the active backend."""
+    url, api_key, access_token = supabase_state_fallback_config()
+    if not url or not api_key or not access_token:
+        raise ValueError("state_not_configured")
+    function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
+    payload = {"p_access_token": access_token, "p_key": key}
+    if method == "POST":
+        payload["p_value"] = value
+    request = Request(
+        url + "/rest/v1/rpc/" + function,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "apikey": api_key,
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=15) as response:
+        raw = response.read()
+    return json.loads(raw.decode("utf-8")) if raw else []
+
+
 def allow_local_state():
     # Local JSON is useful only for an explicitly configured development run.
     # In production, reporting a save failure is safer than silently losing an
@@ -334,27 +373,22 @@ def persistent_state_request(method, key, value=None):
             # storage credentials.  The status is enough to diagnose a remote
             # state-store configuration problem in the server log.
             print(f"Academy state store failed: cloudflare HTTP {exc.code}", flush=True)
+            if exc.code not in {401, 403}:
+                return supabase_state_request(method, key, value)
             raise
-        return json.loads(raw.decode("utf-8")) if raw else {}
+        except (URLError, TimeoutError):
+            return supabase_state_request(method, key, value)
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        # A newly deployed Worker has no row for values stored by the former
+        # backend.  Read that value once from Supabase; the next save migrates
+        # it to Cloudflare without losing a trainee or a revision history.
+        if method == "GET" and isinstance(payload, dict) and payload.get("value") is None:
+            legacy = supabase_state_request("GET", key)
+            if isinstance(legacy, dict) and legacy.get("value") is not None:
+                return legacy
+        return payload
 
-    function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
-    payload = {"p_access_token": access_token, "p_key": key}
-    if method == "POST":
-        payload["p_value"] = value
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = Request(
-        url + "/rest/v1/rpc/" + function,
-        data=body,
-        headers={
-            "apikey": api_key,
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urlopen(request, timeout=15) as response:
-        raw = response.read()
-    return json.loads(raw.decode("utf-8")) if raw else []
+    return supabase_state_request(method, key, value)
 
 
 def read_persistent_state(name):

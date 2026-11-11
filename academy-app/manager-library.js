@@ -233,6 +233,10 @@
     if (role === 'trainee') return traineeCourses;
     return libraryCourses();
   };
+  // The knowledge-base test bank is for client products only. Company
+  // information, the dictionary and the phone directory are reference pages,
+  // not subjects for product certification.
+  const PRODUCT_TEST_COURSE_IDS=new Set(['spk','attestation','iso-suot','iso-37001','licences','mchs','gpn','tr-ts','product-cert','tool-rental','sro','foreign-spk-attestation','windows-doors','paints','metal']);
   const DEFAULT_CUSTOM_CHECK={q:'Какой первый шаг по новому регламенту?',options:['Сразу применять без чтения','Понять задачу, изучить порядок и зафиксировать следующий шаг','Переслать без проверки'],answer:1,order:['Понять задачу','Изучить порядок','Согласовать следующий шаг']};
   const courseCheck=id=>COURSES.find(course=>course.id===id)?.check||DEFAULT_CUSTOM_CHECK;
   const traineeCheckCourse={
@@ -546,7 +550,7 @@
     return shell(`<header class="product-hero"><div><span>ВАШЕ ОБУЧЕНИЕ · ${esc(roleName(access?.role || state.role).toUpperCase())}</span><h1>${trainee?`День ${String(state.traineeDay+1).padStart(2,'0')} · ${esc(day.title)}`:'Рабочая база знаний.'}</h1><p>${trainee?esc(day.intro):`Плитки и содержание отобраны для роли «${audienceLabel(activeAudience())}».`}</p></div><div class="product-hero-note"><b>${trainee?state.traineeDay+1:list.length}</b><span>${trainee?'день из 4':activeAudience()==='manager'?'плиток менеджера':'плиток эксперта'}</span><small>${trainee?'откройте карточку дня выше':'открывайте продукт и действуйте по роли'}</small></div></header>${trainee?traineePlan():staffModeControl()}<section class="course-summary"><span><b>${totalDone()}</b> изучено</span><span><b>${trainee?dayCourses.reduce((n,c)=>n+courseLessonCount(c),0)+reviewCourses.reduce((n,c)=>n+courseLessonCount(c),0):list.reduce((n,c)=>n+courseLessonCount(c),0)}</b> материалов в этом разделе</span><span><b>5</b> рабочих блоков в каждой плитке</span></section>${catalogEditor}${dayAction}${searchSnippets}${reviewCards.length?`<section class="course-toolbar course-toolbar-review"><div><h2>Повторить</h2><p>Материалы первого дня для закрепления перед новыми темами.</p></div></section><section class="course-grid course-grid-review">${reviewCards.join('')}</section>`:''}<section class="course-toolbar"><div><h2>${trainee?'Изучить':activeAudience()==='manager'?'Продукты и продажи':'Продукты и экспертная работа'}</h2><p>${trainee?'Новые материалы выбранного дня: откройте, изучите и отметьте их.':'Открывайте одну плитку: внутри понятие, ресурсы, порядок работы и подсказки для вашей роли.'}</p></div><button class="course-ai-button" onclick="academyAsk()">✦ Помощник по базе знаний</button></section>${standardCards.length?`<section class="course-grid">${standardCards.join('')}</section>`:''}`);
   }
   function testHub() {
-    const courses=coursesFor();
+    const courses=coursesFor().filter(course=>PRODUCT_TEST_COURSE_IDS.has(course.id));
     const audience=activeAudience(), audienceText=audience==='expert'?'эксперта':audience==='manager'?'менеджера':'стажёра';
     return shell(`<header class="test-hub-head"><span>ПРАКТИКА · ${esc(audienceText.toUpperCase())}</span><h1>Тесты по базе</h1><p>Вопросы соответствуют роли: менеджер проверяет диагностику и следующий контакт, эксперт — профессиональный порядок подготовки и контроля.</p></header><section class="test-hub-grid">${courses.map(course=>{const practice=practiceFor(course);return `<article class="test-hub-card course-${course.color}"><div><i>${course.icon}</i><span>${esc(course.eyebrow)}</span></div><h2>${esc(course.title)}</h2><p>${esc(practice.check.q||'Практика по материалу плитки.')}</p><button class="reader-test" onclick="academyTest('${course.id}')">Открыть тест →</button></article>`;}).join('')}</section>`);
   }
@@ -748,10 +752,18 @@
     const completed=lessonDone(course,0),content=safeRichHtml(course.content||'<p>Материал пока не заполнен.</p>');
     return shell(`<button class="course-back" type="button" onclick="academyCatalog()">← К плану стажировки</button><header class="reader-head"><div><span>${esc(course.eyebrow||'ПЛАН СТАЖИРОВКИ')}</span><h1><i>${course.icon||'✓'}</i>${esc(course.title)}</h1><p>${esc(course.lead||'Материал для изучения по плану стажировки.')}</p></div><div class="reader-actions"><button class="reader-edit" type="button" onclick="academyCopyLink('${course.id}')">Скопировать ссылку</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя</button><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header><section class="reader-layout"><aside class="reader-outline"><b>Материал стажировки</b><p>Вся учебная информация находится в этой плитке. Изучите её, выполните задание и пройдите короткую проверку.</p><a href="#trainee-material">Материал</a><a href="#trainee-assignment">Задание</a><div class="reader-practice"><span>После чтения</span><b>Проверьте, что сможете применить материал в разговоре с клиентом.</b><button type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></aside><article class="reader-content"><section id="trainee-material" class="course-document custom-tile-document">${content}</section>${traineeAssignmentPanel(course)}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Материал изучен':'✓ Я изучил(а) этот материал'}</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></article></section>`);
   }
+  function contactsReader(course){
+    const path=(course.sources||[])[0]||'';
+    const inlineEditing=canEditBase()&&state.inlineEditorPath===path;
+    const documentPane=path?(inlineEditing?inlineMaterialEditor(course,path):`<div id="course-document" class="course-document"><div class="course-loading"><b>Открываю контакты…</b><span>Список телефонов и направлений появится здесь.</span></div></div>`):'<p>Список контактов пока не подключён.</p>';
+    const editAction=canEditBase()&&path?`<button class="reader-edit" onclick="academyEditOpenedMaterial()">✎ Редактировать список</button>`:'';
+    return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>РАБОЧИЕ КОНТАКТЫ</span><h1><i>${course.icon}</i>${esc(course.title)}</h1><p>Телефоны и ответственные по направлениям.</p></div><div class="reader-actions">${editAction}</div></header><section class="workspace-source contact-directory"><div>${documentPane}</div></section>`);
+  }
   function reader(){
     const course=current();if(!course)return catalog();
     const role=access?.role||state.role,trainee=role==='trainee';
     if(trainee)return readerTraineeLegacy(course);
+    if(course.id==='contacts')return contactsReader(course);
     const audience=activeAudience(),workspace=workspaceFor(course,audience),indexes=sourceIndexesForAudience(course,audience),selected=selectedSourceFor(course),path=selected.path,completed=done(course),inlineEditing=canEditBase()&&state.inlineEditorPath===path;
     const sourceButtons=indexes.map(index=>`<button type="button" class="${index===selected.index?'active':''}" aria-current="${index===selected.index?'page':'false'}" onclick="academySource(${index})"><span>${String(index+1).padStart(2,'0')}</span><b>${esc(sourceTitle(course.sources[index]))}</b></button>`).join('');
     const flow=workspace.flow.map((item,index)=>`<li><b>${String(index+1).padStart(2,'0')}</b><span>${esc(item)}</span></li>`).join('');

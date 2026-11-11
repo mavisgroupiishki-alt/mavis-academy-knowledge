@@ -98,6 +98,26 @@ class CourseSourceContractTests(unittest.TestCase):
         for role in ("manager", "expert", "leader"):
             self.assertTrue(server.document_access_for(role, "any-course", "02 PRODUCTS/valid.md"))
 
+    def test_test_hub_is_limited_to_product_tiles(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("const PRODUCT_TEST_COURSE_IDS=new Set", source)
+        self.assertIn("coursesFor().filter(course=>PRODUCT_TEST_COURSE_IDS.has(course.id))", source)
+        product_ids = source.split("const PRODUCT_TEST_COURSE_IDS=new Set(", 1)[1].split(");", 1)[0]
+        self.assertIn("'spk'", product_ids)
+        self.assertNotIn("'company'", product_ids)
+        self.assertNotIn("'contacts'", product_ids)
+
+    def test_contact_directory_does_not_use_the_generic_product_workspace(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("function contactsReader(course)", source)
+        self.assertIn("if(course.id==='contacts')return contactsReader(course);", source)
+        directory = source.split("function contactsReader(course)", 1)[1].split("function reader(){", 1)[0]
+        self.assertIn("Телефоны и ответственные по направлениям.", directory)
+        self.assertNotIn("workspace-flow", directory)
+        self.assertNotIn("Открыть практику", directory)
+
     def test_staff_reader_uses_role_specific_workspaces(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
@@ -312,6 +332,40 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(captured["headers"]["X-academy-state-token"], "server-only-token")
         self.assertEqual(captured["headers"]["User-agent"], "Mavis-Academy-State/1.0")
         self.assertNotIn("server-only-token", captured["url"])
+
+    def test_cloudflare_rejection_falls_back_to_existing_server_side_results_store(self):
+        requested_urls = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return b'{"value":{"items":[]}}'
+
+        def fake_urlopen(request, timeout):
+            requested_urls.append(request.full_url)
+            if "workers.dev" in request.full_url:
+                raise server.HTTPError(request.full_url, 400, "invalid_key", None, None)
+            return Response()
+
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_WRITE_TOKEN": "cloudflare-token",
+            "ACADEMY_RESULTS_URL": "https://example.supabase.co",
+            "ACADEMY_RESULTS_SERVICE_KEY": "service-key",
+            "ACADEMY_RESULTS_WRITE_TOKEN": "results-token",
+        }, clear=False), patch.object(server, "urlopen", fake_urlopen):
+            payload = server.persistent_state_request("GET", "academy:trainee-submissions")
+
+        self.assertEqual(payload, {"value": {"items": []}})
+        self.assertEqual(len(requested_urls), 2)
+        self.assertIn("workers.dev/state?key=academy%3Atrainee-submissions", requested_urls[0])
+        self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
 
 
 if __name__ == "__main__":
