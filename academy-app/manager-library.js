@@ -163,6 +163,37 @@
     'tr-d1-suot45001':'iso-suot',
     'tr-d1-suot45001-periodic':'iso-suot'
   };
+  // Every prescribed reading item is opened from an internal Academy source.
+  // These mappings also repair already-saved curricula that were created
+  // before sources were attached to the day 2–4 cards.
+  const TRAINEE_INTERNAL_SOURCE_PATHS={
+    ...TRAINEE_DAY_ONE_SOURCE_PATHS,
+    'tr-d2-repeat-products':'03 SALES/Скрипты — Чек-лист по всем продуктам.docx.md',
+    'tr-d2-script-structure':'03 SALES/Скрипты — Скрипт продаж МАВИС ГРУПП общий:.md',
+    'tr-d2-price-templates':'02 PRODUCTS/Google Drive/Прайс на услуги 25.08.md',
+    'tr-d2-call-analysis':'03 SALES/Сценарии — холодный звонок, возражения и периодика.md',
+    'tr-d3-repeat-products':'03 SALES/Скрипты — Чек-лист по всем продуктам.docx.md',
+    'tr-d3-general-sales-script':'03 SALES/Скрипты — Скрипт продаж МАВИС ГРУПП общий:.md',
+    'tr-d3-bitrix-regulation':'06 BITRIX24/Регламент — работа с делами и воронкой производства.md',
+    'tr-d3-tables':'02 PRODUCTS/Google Drive/Прайс на услуги 25.08.md',
+    'tr-d3-bitrix-review':'06 BITRIX24/Регламент — работа с делами и воронкой производства.md',
+    'tr-d3-mvd':'02 PRODUCTS/Учебный маршрут — лицензия МВД.md',
+    'tr-d3-mchs':'02 PRODUCTS/Учебный маршрут — лицензия МЧС.md',
+    'tr-d4-repeat-day1':'03 SALES/Скрипты — Чек-лист по всем продуктам.docx.md',
+    'tr-d4-calls':'03 SALES/Сценарии — холодный звонок, возражения и периодика.md',
+    'tr-d4-products':'03 SALES/Скрипты — Чек-лист по всем продуктам.docx.md',
+    'tr-d4-first-kp':'02 PRODUCTS/Google Drive/Прайс на услуги 25.08.md'
+  };
+  const TRAINEE_INTERNAL_SOURCE_COURSES={
+    ...TRAINEE_DAY_ONE_SOURCE_COURSES,
+    'tr-d2-repeat-products':'sales', 'tr-d2-script-structure':'sales',
+    'tr-d2-price-templates':'product-cert', 'tr-d2-call-analysis':'sales',
+    'tr-d3-repeat-products':'sales', 'tr-d3-general-sales-script':'sales',
+    'tr-d3-bitrix-regulation':'bitrix', 'tr-d3-tables':'product-cert',
+    'tr-d3-bitrix-review':'bitrix', 'tr-d3-mvd':'licences', 'tr-d3-mchs':'mchs',
+    'tr-d4-repeat-day1':'sales', 'tr-d4-calls':'sales',
+    'tr-d4-products':'sales', 'tr-d4-first-kp':'product-cert'
+  };
   const traineeEmbeddedCourse=(sourceId,id)=>{
     // Day-one product lessons live in the foundation collection.  Looking
     // only in TRAINEE_COURSES produced seven empty objects, so the catalogue
@@ -246,7 +277,7 @@
   const TRAINEE_COURSE_IDS=new Set(TRAINEE_SHEET_COURSES.map(course=>course.id));
   const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>
     TRAINEE_COURSE_IDS.has(course?.id)
-      ? {...course,sources:TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]?[TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]]:(course.sources||[]),attachments:[],sourceCourse:TRAINEE_DAY_ONE_SOURCE_COURSES[course.id]||'',fallbackContent:''}
+      ? {...course,sources:TRAINEE_INTERNAL_SOURCE_PATHS[course.id]?[TRAINEE_INTERNAL_SOURCE_PATHS[course.id]]:(course.sources||[]),attachments:[],sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[course.id]||course.sourceCourse||'',fallbackContent:''}
       : course
   );
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);

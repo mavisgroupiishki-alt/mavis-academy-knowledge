@@ -183,9 +183,29 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertTrue((server.KNOWLEDGE_ROOT / company_path).is_file())
         self.assertIn("const TRAINEE_DAY_ONE_SOURCE_PATHS=", source)
         self.assertIn("const TRAINEE_DAY_ONE_SOURCE_COURSES=", source)
-        self.assertIn("TRAINEE_DAY_ONE_SOURCE_PATHS[course.id]", source)
-        self.assertIn("sourceCourse:TRAINEE_DAY_ONE_SOURCE_COURSES[course.id]||''", source)
+        self.assertIn("const TRAINEE_INTERNAL_SOURCE_PATHS=", source)
+        self.assertIn("TRAINEE_INTERNAL_SOURCE_PATHS[course.id]", source)
+        self.assertIn("sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[course.id]||course.sourceCourse||''", source)
         self.assertIn("if((access?.role||state.role)==='trainee')return reference?[]:all", source)
+
+    def test_days_two_to_four_open_internal_sources_instead_of_external_links(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        expected_paths = (
+            "03 SALES/Скрипты — Скрипт продаж МАВИС ГРУПП общий:.md",
+            "06 BITRIX24/Регламент — работа с делами и воронкой производства.md",
+            "02 PRODUCTS/Учебный маршрут — лицензия МВД.md",
+            "02 PRODUCTS/Учебный маршрут — лицензия МЧС.md",
+            "03 SALES/Сценарии — холодный звонок, возражения и периодика.md",
+        )
+        for path in expected_paths:
+            self.assertIn(path, source)
+            self.assertTrue((server.KNOWLEDGE_ROOT / path).is_file(), path)
+
+        self.assertIn("'tr-d3-mvd':'licences'", source)
+        self.assertIn("'tr-d3-mchs':'mchs'", source)
+        self.assertTrue(server.document_access_for("trainee", "licences", "02 PRODUCTS/Учебный маршрут — лицензия МВД.md"))
+        self.assertTrue(server.document_access_for("trainee", "mchs", "02 PRODUCTS/Учебный маршрут — лицензия МЧС.md"))
 
     def test_trainee_default_contains_only_sheet_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
