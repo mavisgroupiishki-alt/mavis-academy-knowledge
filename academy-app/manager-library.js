@@ -1,7 +1,7 @@
 /* Product Academy: internal reading, practice, completion and role access. */
 (function () {
   if (!document.getElementById('academy-exam-styles')) { const stylesheet=document.createElement('link'); stylesheet.id='academy-exam-styles'; stylesheet.rel='stylesheet'; stylesheet.href='exam.css?v=8.1'; document.head.appendChild(stylesheet); }
-  if (!document.getElementById('academy-trainee-flow-styles')) { const stylesheet=document.createElement('link'); stylesheet.id='academy-trainee-flow-styles'; stylesheet.rel='stylesheet'; stylesheet.href='trainee-flow.css?v=10.1'; document.head.appendChild(stylesheet); }
+  if (!document.getElementById('academy-trainee-flow-styles')) { const stylesheet=document.createElement('link'); stylesheet.id='academy-trainee-flow-styles'; stylesheet.rel='stylesheet'; stylesheet.href='trainee-flow.css?v=10.2'; document.head.appendChild(stylesheet); }
   const oldRender = window.render;
   const oldSetScreen = window.setScreen;
   const STAFF_ROLES = ['manager','expert','leader'];
@@ -133,8 +133,8 @@
     content:traineeLesson(title,lead,[...(TRAINEE_MATERIALS[id]||[{title:'Материал',text:'Изучите тему, проверьте входные данные и зафиксируйте безопасный следующий шаг.'}]),{title:'Обязательное задание на сегодня',items}])
   });
   const traineeVideoTile=()=>{
-    const tile=traineeSheetTile('tr-d1-video','Видео-обучение','День 01 · знакомство','Посмотрите вводное видео о компании, клиентах и логике первого разговора.',['Посмотрите видео целиком.','Выпишите: чем занимается компания, кто её клиент и какова роль менеджера.']);
-    tile.content=traineeLesson('Видео-обучение',tile.lead,[{title:'После просмотра',items:['Своими словами объясните, чем Mavis Group полезна клиенту.','Назовите три факта, которые менеджер должен выяснить перед предложением услуги.']}])+`<figure class="trainee-media trainee-video"><iframe title="Видео-обучение Mavis" src="https://docs.google.com/videos/d/1i3c78SieIX4SOQVvViOQ1t5WSzKgY4UuCoqecyZ0fus/play" allow="autoplay; fullscreen" allowfullscreen></iframe><figcaption>Видео открывается прямо в Academy.</figcaption></figure>`;
+    const tile=traineeSheetTile('tr-d1-video','Видео-обучение','День 01 · таблица стажировки','О компании; чем занимается компания; кто клиенты компании; структура отдела продаж.',['Посмотрите видео-обучение.']);
+    tile.content=traineeLesson('Видео-обучение',tile.lead,[{title:'Что необходимо изучить',items:['О компании.','Чем занимается компания.','Кто клиенты компании.','Структура отдела продаж.']}])+`<figure class="trainee-media trainee-video"><iframe title="Видео-обучение Mavis" src="https://docs.google.com/videos/d/1i3c78SieIX4SOQVvViOQ1t5WSzKgY4UuCoqecyZ0fus/play" allow="autoplay; fullscreen" allowfullscreen></iframe><figcaption>Видео-обучение.</figcaption></figure>`;
     return tile;
   };
   // День 01 должен открывать не рекламный пересказ, а полный паспорт продукта,
@@ -150,7 +150,6 @@
     'tr-suot-periodic':'02 PRODUCTS/Паспорт продукта — 0304 Периодика СУОТ 45001.md'
   };
   const TRAINEE_DAY_ONE_SOURCE_PATHS={
-    'tr-d1-company':'09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md',
     'tr-d1-spk':TRAINEE_PRODUCT_PASSPORTS['tr-spk'],
     'tr-d1-attestation-st':TRAINEE_PRODUCT_PASSPORTS['tr-att-st'],
     'tr-d1-attestation-gs':TRAINEE_PRODUCT_PASSPORTS['tr-att-gs'],
@@ -160,7 +159,6 @@
     'tr-d1-suot45001-periodic':TRAINEE_PRODUCT_PASSPORTS['tr-suot-periodic']
   };
   const TRAINEE_DAY_ONE_SOURCE_COURSES={
-    'tr-d1-company':'company',
     'tr-d1-spk':'spk',
     'tr-d1-attestation-st':'attestation',
     'tr-d1-attestation-gs':'attestation',
@@ -210,7 +208,7 @@
   };
   const TRAINEE_SHEET_COURSES = [
     traineeVideoTile(),
-    traineeSheetTile('tr-d1-company','Общая информация','День 01 · компания','Изучите, чем занимается Mavis Group, кто наши клиенты и как устроена работа отдела продаж.',['Напишите, чем занимается компания и кто её клиент.','Объясните, зачем клиенту нужны наши услуги и почему ему выгодно работать с нами.'],'sales',['09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md']),
+    traineeSheetTile('tr-d1-company','Общая информация','День 01 · таблица стажировки','База знаний NotebookLM — доступ и ссылку предоставляет РОП. Дополнительная информация по продуктам.',['После изучения кратко напишите в отдельном Google Doc: чем занимается компания; кто наш клиент (целевая аудитория); зачем клиенту нужны наши услуги; почему клиенту выгодно работать именно с нами.'],'sales',[]),
     traineeEmbeddedCourse('tr-spk','tr-d1-spk'),
     traineeEmbeddedCourse('tr-att-st','tr-d1-attestation-st'),
     traineeEmbeddedCourse('tr-att-gs','tr-d1-attestation-gs'),
@@ -250,7 +248,7 @@
     {title:'Офис: звонки и экзамен', intro:'Повторение, 10 холодных звонков, анализ результатов, первое КП и экзамен.', result:'Анализ звонков, первое КП и итоговая аттестация по 20 вопросам.', courseIds:['tr-d4-repeat-day1','tr-d4-ten-calls','tr-d4-call-log','tr-d4-first-kp','tr-d4-exam']},
   ];
   const TRAINEE_LEGACY_COURSE_IDS=new Set(['tr-d3-script-practice','tr-d4-products','tr-d4-calls','tr-d4-call-analysis','tr-d4-rop']);
-  const TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-11.5';
+  const TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.2';
   const FINAL_EXAM_BANK = [
     {q:'Клиент выполняет монтаж на объекте 3 класса и просит «просто СПК». Что уточнить первым?', options:['Только срок выдачи','Виды работ, класс объекта, специалистов и исходные документы','Размер скидки'], answer:1},
     {q:'После звонка клиент сказал: «Перезвоните во вторник после совещания». Какой следующий шаг верный?', options:['Оставить комментарий без срока','Создать задачу на вторник с темой разговора и ответственным','Ждать, пока клиент напишет сам'], answer:1},
@@ -278,13 +276,17 @@
   // country-specific ISO references and other working sources stay in staff
   // tiles only.  Apply this to already saved versions of the curriculum too.
   const TRAINEE_COURSE_IDS=new Set(TRAINEE_SHEET_COURSES.map(course=>course.id));
-  const TRAINEE_CURRICULUM_TEMPLATE='sales-internship-sheet-2026-11-12.1';
+  // These first two cards are the literal Day 01 entries from the internship
+  // table. They deliberately do not inherit the staff “company and glossary”
+  // source, because it is a different material.
+  const TRAINEE_TABLE_ONLY_IDS=new Set(['tr-d1-video','tr-d1-company']);
+  const TRAINEE_CURRICULUM_TEMPLATE='sales-internship-sheet-2026-11-12.2';
   const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>{
     if(!TRAINEE_COURSE_IDS.has(course?.id))return course;
     const normalized=course;
     const configuredPath=TRAINEE_INTERNAL_SOURCE_PATHS[course.id];
     const sourceMeta={sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[course.id]||course.sourceCourse||''};
-    return {...normalized,sources:normalized.isCustomContent?[]:(configuredPath?[configuredPath]:(normalized.sources||[])),attachments:[],...sourceMeta,fallbackContent:''};
+    return {...normalized,sources:normalized.isCustomContent||TRAINEE_TABLE_ONLY_IDS.has(course.id)?[]:(configuredPath?[configuredPath]:(normalized.sources||[])),attachments:[],...sourceMeta,fallbackContent:''};
   });
   const normalizeTraineeCurriculum=(courses,days)=>{
     const savedCourses=Array.isArray(courses)?courses:[];
@@ -301,6 +303,7 @@
     const customByDay=(Array.isArray(days)?days:[]).map(day=>(day?.courseIds||[]).filter(id=>!templates.has(id)&&!TRAINEE_LEGACY_COURSE_IDS.has(id)));
     const migrated=TRAINEE_SHEET_COURSES.map(template=>{
       const saved=savedById.get(template.id);
+      if(TRAINEE_TABLE_ONLY_IDS.has(template.id))return {...template,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE};
       return saved?{...saved,title:template.title,eyebrow:template.eyebrow,lead:template.lead,assignment:saved.assignment||template.assignment,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE}:{...template,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE};
     }).concat(savedCourses.filter(course=>course&&!templates.has(course.id)&&!TRAINEE_LEGACY_COURSE_IDS.has(course.id)));
     const available=new Set(migrated.map(course=>course.id));
