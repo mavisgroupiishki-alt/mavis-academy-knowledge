@@ -202,9 +202,10 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("!isManagerSource(path)", source)
         self.assertIn("Понятие", source)
         self.assertIn("Инструменты и документы", source)
-        self.assertIn("Ход работы менеджера", source)
+        self.assertIn("Полный рабочий регламент менеджера", source)
         self.assertNotIn('<a href="#workspace-tips">Подсказки</a>', source)
-        self.assertIn("const genericFlow=audience==='manager'", source)
+        self.assertNotIn("Подробный ход работы из паспортов", source)
+        self.assertIn("workflow-document", source)
         self.assertIn("Фокус менеджера", source)
         self.assertIn("Фокус эксперта", source)
         self.assertIn("window.academyAudience=", source)
@@ -310,9 +311,11 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Обязательное задание на сегодня", source)
         self.assertIn("Итоговая работа: диагностика и следующий шаг", source)
         self.assertIn("academySubmitTraineeAssignment", source)
-        self.assertIn("courseIds:['tr-d2-repeat-products','tr-d2-script-structure','tr-d2-price-templates','tr-d2-call-analysis','tr-d2-own-script']", source)
-        self.assertIn("courseIds:['tr-d3-repeat-products','tr-d3-general-sales-script','tr-d3-script-practice','tr-d3-bitrix-regulation','tr-d3-tables','tr-d3-bitrix-review','tr-d3-mvd','tr-d3-mchs']", source)
-        self.assertIn("courseIds:['tr-d4-repeat-day1','tr-d4-calls','tr-d4-call-analysis','tr-d4-products','tr-d4-ten-calls','tr-d4-call-log','tr-d4-rop','tr-d4-first-kp','tr-d4-exam']", source)
+        self.assertIn("courseIds:['tr-d2-repeat-products','tr-d2-script-structure','tr-d2-price-templates','tr-d2-own-script']", source)
+        self.assertIn("courseIds:['tr-d3-repeat-products','tr-d3-general-sales-script','tr-d3-bitrix-regulation','tr-d3-mvd','tr-d3-mchs']", source)
+        self.assertIn("courseIds:['tr-d4-calls','tr-d4-call-analysis','tr-d4-exam']", source)
+        day_three = source.split("const TRAINEE_DAYS = [", 1)[1].split("  ];", 1)[0]
+        self.assertNotIn("tr-d3-script-practice", day_three)
         final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
         self.assertEqual(final_exam.count("{q:'"), 20)
 
