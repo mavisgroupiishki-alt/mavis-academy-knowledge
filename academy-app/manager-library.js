@@ -281,7 +281,9 @@
     // Only migrate the former placeholder. A title entered by the leader is
     // never overwritten on reload.
     const normalized=legacyCompany?{...course,title:'Учебный маршрут — Mavis Group: компания и словарь',eyebrow:'День 01 · учебный маршрут',lead:'Изучите, чем занимается Mavis Group, как объяснять ценность клиенту и какие рабочие сокращения использует команда.'}:course;
-    return {...normalized,sources:normalized.isCustomContent?[]:(TRAINEE_INTERNAL_SOURCE_PATHS[normalized.id]?[TRAINEE_INTERNAL_SOURCE_PATHS[normalized.id]]:(normalized.sources||[])),attachments:[],sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[normalized.id]||normalized.sourceCourse||'',fallbackContent:''};
+    const configuredPath=TRAINEE_INTERNAL_SOURCE_PATHS[course.id];
+    const sourceMeta={sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[course.id]||course.sourceCourse||''};
+    return {...normalized,sources:normalized.isCustomContent?[]:(configuredPath?[configuredPath]:(normalized.sources||[])),attachments:[],...sourceMeta,fallbackContent:''};
   });
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);
   let traineeDays = TRAINEE_DAYS;
