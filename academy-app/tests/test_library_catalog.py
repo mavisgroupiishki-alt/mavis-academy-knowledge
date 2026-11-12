@@ -369,6 +369,72 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("def search_knowledge_results", source)
         self.assertIn("def append_revision", source)
 
+
+class KnowledgeAssistantRetrievalTests(unittest.TestCase):
+    def test_short_product_abbreviations_are_kept_in_assistant_queries(self):
+        self.assertIn("си", server.normalize_terms("перечень СИ для СПК"))
+        self.assertIn("спк", server.normalize_terms("как подать заявление для СПК"))
+
+    def test_spk_queries_retrieve_relevant_passport_rows_instead_of_file_prefix(self):
+        passport_path = "02 PRODUCTS/Паспорт продукта — 0101 СПК.md"
+        unrelated_path = "03 SALES/Скрипт продаж.md"
+        docs = {
+            passport_path: "# Паспорт СПК\n| A16 | средства измерения |\n| B16 | Рулетка; линейка; нивелир; нивелирная рейка; манометр |\n| A17 | средства измерения в аренду |\n| B17 | Нивелир; теодолит |",
+            unrelated_path: "# Скрипт продаж\nЗаявление о цене и встрече с клиентом.",
+        }
+        with patch.object(server, "knowledge_paths", return_value=list(docs)), patch.object(
+            server, "fetch_knowledge_document", side_effect=lambda path, limit=None: docs[path]
+        ):
+            server.KNOWLEDGE_TEXT_CACHE["texts"].clear()
+            sources = server.select_knowledge_sources("перечень СИ для СПК")
+
+        self.assertEqual(sources[0]["path"], passport_path)
+        self.assertIn("Рулетка; линейка; нивелир", sources[0]["text"])
+
+    def test_real_spk_passport_tools_cell_is_retrieved_for_si_query(self):
+        passport_path = "02 PRODUCTS/Паспорт продукта — 0101 СПК.md"
+        server.KNOWLEDGE_TEXT_CACHE["texts"].pop(passport_path, None)
+        sources = server.select_knowledge_sources("перечень СИ для СПК", [passport_path])
+
+        self.assertEqual(sources[0]["path"], passport_path)
+        self.assertIn("| A16 | средства измерения |", sources[0]["text"])
+        self.assertIn("| B16 |", sources[0]["text"])
+        self.assertIn("нивелир", sources[0]["text"].lower())
+
+    def test_openrouter_web_citations_are_kept_separate_and_safe(self):
+        sources = server.openrouter_external_sources({"annotations": [
+            {"type": "url_citation", "url_citation": {"url": "https://pravo.by/page", "title": "Правовой портал"}},
+            {"type": "url_citation", "url_citation": {"url": "https://pravo.by/page", "title": "Правовой портал"}},
+            {"type": "url_citation", "url_citation": {"url": "javascript:alert(1)", "title": "Bad"}},
+        ]})
+
+        self.assertEqual(sources, [{"title": "Правовой портал", "url": "https://pravo.by/page"}])
+
+    def test_openrouter_request_uses_bounded_web_search_and_never_exposes_key_in_body(self):
+        request = server.build_openrouter_request("test-secret", "openai/gpt-6.1-terra", "system", "prompt")
+        payload = json.loads(request.data)
+
+        self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-secret")
+        self.assertEqual(payload["tools"][0]["type"], "openrouter:web_search")
+        self.assertEqual(payload["tools"][0]["parameters"]["max_uses"], 1)
+        self.assertEqual(payload["tools"][0]["parameters"]["max_results"], 3)
+        self.assertNotIn("test-secret", request.data.decode("utf-8"))
+
+    def test_spk_application_question_retrieves_application_step_not_document_intro(self):
+        passport_path = "02 PRODUCTS/Паспорт продукта — 0101 СПК.md"
+        docs = {
+            passport_path: "# Паспорт СПК\n| A1 | Общая информация |\n| B1 | Длинное вводное описание документа. |\n| A3 | 2 этап: Подача заявки |\n| B3 | Заполнить заявку и направить её на электронную почту органа. Орган вышлет договор и счёт, которые направляют клиенту для оплаты. |",
+        }
+        with patch.object(server, "knowledge_paths", return_value=list(docs)), patch.object(
+            server, "fetch_knowledge_document", side_effect=lambda path, limit=None: docs[path]
+        ):
+            server.KNOWLEDGE_TEXT_CACHE["texts"].clear()
+            sources = server.select_knowledge_sources("как подать заявление для СПК")
+
+        self.assertEqual(sources[0]["path"], passport_path)
+        self.assertIn("направить её на электронную почту органа", sources[0]["text"])
+
     def test_manager_reader_loads_full_workflow_materials(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
