@@ -1,4 +1,5 @@
 import sys
+import io
 import json
 import re
 import unittest
@@ -190,6 +191,28 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertNotIn("workspace-flow", directory)
         self.assertNotIn("Открыть практику", directory)
 
+    def test_case_library_uses_the_source_cases_without_generic_product_sections(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("id:'cases'", source)
+        self.assertIn("КЕЙС ДЛЯ СТАЖЁРА ПРОДАЖИ · ВАРИАНТ 1", source)
+        self.assertIn("function casesReader(course)", source)
+        case_reader = source.split("function casesReader(course)", 1)[1].split("function reader(){", 1)[0]
+        self.assertNotIn("workspace-people", case_reader)
+        self.assertNotIn("workspace-tools", case_reader)
+
+    def test_product_reference_sections_take_full_passport_lists_from_general_and_work_sheets(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        spk_passport = (server.ROOT.parent / "02 PRODUCTS" / "Паспорт продукта — 0101 СПК.md").read_text(encoding="utf-8")
+
+        self.assertIn("const sheets=kind==='people'?['Общая','ВИДЫ РАБОТ']:['Общая'];", source)
+        self.assertIn("'workspace-tools','Инструменты и СИ'", source)
+        self.assertIn("workspace-reference-item", source)
+        self.assertIn("sourcePlainText", source)
+        self.assertIn("| A14 | Требования по штату специалистов |", spk_passport)
+        self.assertIn("| A16 | средства измерения |", spk_passport)
+        self.assertIn("рулетка измерительная металлическая", spk_passport)
+
     def test_staff_reader_uses_role_specific_workspaces(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
@@ -201,7 +224,9 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("!isExpertSource(path)", source)
         self.assertIn("!isManagerSource(path)", source)
         self.assertIn("Понятие", source)
-        self.assertIn("'workspace-tools','Инструменты'", source)
+        self.assertIn("'workspace-tools','Инструменты и СИ'", source)
+        self.assertIn("loadProductReferenceLists", source)
+        self.assertIn("workspace-reference-item", source)
         self.assertIn("'workspace-other','Другое'", source)
         self.assertIn("academyReturnToStaff", source)
         self.assertIn("!['full-library','company'].includes(course.id)", source)
@@ -420,6 +445,37 @@ class KnowledgeAssistantRetrievalTests(unittest.TestCase):
         self.assertEqual(payload["tools"][0]["parameters"]["max_uses"], 1)
         self.assertEqual(payload["tools"][0]["parameters"]["max_results"], 3)
         self.assertNotIn("test-secret", request.data.decode("utf-8"))
+
+    def test_openrouter_retries_transient_search_failure_without_optional_search(self):
+        success = io.BytesIO('{"choices":[{"message":{"content":"Ответ из базы"}}]}'.encode("utf-8"))
+        failure = server.HTTPError("https://openrouter.ai", 503, "unavailable", None, None)
+        with patch.object(server, "urlopen", side_effect=[failure, success]) as open_url, patch.object(server.time, "sleep"):
+            response, degraded = server.request_openrouter_answer("test-secret", "model", "system", "prompt")
+
+        self.assertTrue(degraded)
+        self.assertEqual(response["choices"][0]["message"]["content"], "Ответ из базы")
+        first_payload = json.loads(open_url.call_args_list[0].args[0].data)
+        retry_payload = json.loads(open_url.call_args_list[1].args[0].data)
+        self.assertIn("tools", first_payload)
+        self.assertNotIn("tools", retry_payload)
+
+    def test_openrouter_does_not_retry_permanent_auth_errors(self):
+        failure = server.HTTPError("https://openrouter.ai", 401, "unauthorized", None, None)
+        with patch.object(server, "urlopen", side_effect=failure) as open_url:
+            with self.assertRaises(server.HTTPError):
+                server.request_openrouter_answer("test-secret", "model", "system", "prompt")
+
+        open_url.assert_called_once()
+
+    def test_internal_fallback_keeps_retrieved_excerpt_and_marks_web_search_unavailable(self):
+        answer = server.internal_knowledge_fallback([{
+            "path": "02 PRODUCTS/Паспорт продукта — 0101 СПК.md",
+            "text": "Этап подачи заявки: направить заявку в орган по электронной почте.",
+        }])
+
+        self.assertIn("веб-поиск не выполнен", answer)
+        self.assertIn("Этап подачи заявки", answer)
+        self.assertIn("Паспорт продукта — 0101 СПК.md", answer)
 
     def test_spk_application_question_retrieves_application_step_not_document_intro(self):
         passport_path = "02 PRODUCTS/Паспорт продукта — 0101 СПК.md"

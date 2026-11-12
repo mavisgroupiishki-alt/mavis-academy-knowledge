@@ -8,26 +8,37 @@
   const isStaff = role => STAFF_ROLES.includes(role);
   const canEditBase = () => isStaff(access?.role || state.role);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // Google Docs / Sheets exports sometimes contain a literal ``<br>`` or
+  // ``&lt;br&gt;`` in a cell.  Treat it as a line break before rendering so the
+  // user never sees technical fragments such as "br br" in a lesson.
+  const sourcePlainText = value => String(value ?? '')
+    .replace(/(?:<|&lt;)br\s*\/?(?:>|&gt;)/gi, '\n')
+    .replace(/(^|\n)[ \t]*br(?:[ \t]+br)+[ \t]*(?=\n|$)/gim, '$1')
+    .replace(/(^|\n)[ \t]*br[ \t]*(?=\n|$)/gim, '$1')
+    .replace(/\n{3,}/g, '\n\n');
   const safeRichHtml = value => {
-    const wrapper=document.createElement('div'); wrapper.innerHTML=String(value||'');
-    const allowed=new Set(['section','article','h2','h3','h4','p','ul','ol','li','strong','b','em','i','u','mark','span','font','br','hr','a','div','table','thead','tbody','tr','th','td','small','details','summary','figure','figcaption','img','iframe']);
+    const wrapper=document.createElement('div'); wrapper.innerHTML=String(value||'').replace(/&lt;br\s*\/?&gt;/gi,'<br>');
+    const allowed=new Set(['section','article','h2','h3','h4','p','ul','ol','li','strong','b','em','i','u','mark','span','font','br','hr','a','div','table','thead','tbody','tr','th','td','small','details','summary','figure','figcaption','img','iframe','dl','dt','dd']);
     [...wrapper.querySelectorAll('*')].forEach(node=>{
       if(!allowed.has(node.tagName.toLowerCase())){node.replaceWith(...node.childNodes);return;}
       const href=node.getAttribute('href')||'', src=node.getAttribute('src')||'', alt=node.getAttribute('alt')||'', color=node.getAttribute('color')||'', style=node.getAttribute('style')||'', className=node.getAttribute('class')||'';
       [...node.attributes].forEach(attribute=>node.removeAttribute(attribute.name));
-      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
+      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption','case-library','case-library-note'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
       if(node.tagName==='A'){if(/^https:\/\//i.test(href))node.setAttribute('href',href);else node.replaceWith(...node.childNodes);}
       if(node.tagName==='IMG'){const normalized=src.replace(/^\//,'');if(/^media\/[a-z0-9._-]+\.(?:png|jpe?g|webp)$/i.test(normalized)){node.setAttribute('src',`/${normalized}`);node.setAttribute('alt',alt.slice(0,180));node.setAttribute('loading','lazy');}else node.remove();}
       if(node.tagName==='IFRAME'){if(/^https:\/\/docs\.google\.com\/videos\/d\/[a-zA-Z0-9_-]+\/(?:play|embed)(?:\?[^\s]*)?$/i.test(src)){node.setAttribute('src',src);node.setAttribute('title',alt||'Видео-обучение');node.setAttribute('allow','autoplay; fullscreen');node.setAttribute('allowfullscreen','');}else node.remove();}
       if(node.tagName==='FONT'&&/^#[0-9a-f]{3,8}$/i.test(color))node.setAttribute('color',color);
       if(node.tagName==='SPAN'){const clean=style.split(';').map(rule=>rule.trim()).filter(rule=>/^(color|background-color|font-weight|font-style|font-family)\s*:/i.test(rule)).join(';');if(clean)node.setAttribute('style',clean);}
     });
+    const walker=document.createTreeWalker(wrapper,NodeFilter.SHOW_TEXT);
+    let textNode;while((textNode=walker.nextNode()))textNode.nodeValue=sourcePlainText(textNode.nodeValue).replace(/\n/g,' ');
     return wrapper.innerHTML;
   };
   const products = (prefix, names) => names.map(name => `${prefix}/${name}`);
   const COURSES = [
     {id:'company', icon:'M', color:'navy', title:'Mavis Group: компания и словарь', eyebrow:'Старт работы', lead:'Чем занимается компания, как объяснять ценность клиенту и что означают СПК, ИТР, СИ, ТТК, ТНПА и другие рабочие сокращения.', sources:products('09 SOP',['Учебный маршрут — Mavis Group: компания и словарь.md']), check:{q:'С чего начинается корректный разговор о продукте?', options:['С обещания результата','С понимания задачи клиента и нужного ему результата','С перечисления всех услуг компании'], answer:1, order:['Понять задачу','Уточнить исходные данные','Согласовать следующий шаг']}},
     {id:'contacts', icon:'☎', color:'navy', title:'Важные контакты', eyebrow:'Рабочие контакты', lead:'Органы, эксперты, обучение и сертификация: контакты сгруппированы по направлению и задаче.', sources:products('09 SOP',['Важные контакты — органы, экспертиза и обучение.md']), check:{q:'Что подготовить до рабочего звонка эксперту или в орган?', options:['Только название компании','Вид работ, объект, кадровую матрицу и конкретный вопрос','Только просьбу «перезвонить»'], answer:1, order:['Собрать факты','Сформулировать вопрос','Зафиксировать ответ и следующий шаг']}},
+    {id:'cases', icon:'▤', color:'yellow', title:'Кейсы', eyebrow:'Практика · продажи', roles:['manager','expert','leader'], lead:'Учебные вводные для разбора запроса, перечня документов и коммерческого предложения.', content:`<section class="case-library"><p class="case-library-note">По каждому кейсу подготовьте: <b>1)</b> какие документы нужны; <b>2)</b> КП на то, что действительно нужно клиенту.</p><article><span>КЕЙС ДЛЯ СТАЖЁРА ПРОДАЖИ · ВАРИАНТ 1</span><h2>ООО «РОГА И КОПЫТА»</h2><dl><dt>Область</dt><dd>Закрыл ИП и открываю новую компанию ООО «РОГА И КОПЫТА». Будем делать электрику и сантехнику всю. Будем работать на всех классах сложности.</dd><dt>Штат</dt><dd>Есть главный инженер по электрике, остальное подберите вы.</dd><dt>Оборудование</dt><dd>Нет ничего кроме хорошего настроения и улыбки.</dd></dl></article><article><span>КЕЙС ДЛЯ СТАЖЁРА ПРОДАЖИ · ВАРИАНТ 2</span><h2>ООО «стройбаны»</h2><dl><dt>Область</dt><dd>Клиентка — мастер маникюра в салоне ООО «Елена». Нужно заменить окна, покрасить стены и заменить плитку в помещении бизнес-центра «АЯКС» на 20-м этаже.</dd><dt>Штат</dt><dd>Есть прораб общестрой, мастер.</dd><dt>Оборудование</dt><dd>Нет ничего.</dd></dl></article><article><span>КЕЙС ДЛЯ СТАЖЁРА ПРОДАЖИ · ВАРИАНТ 3</span><h2>ООО «булка хлеба»</h2><dl><dt>Область</dt><dd>Открылась новая компания; известно, что занимаются электрикой.</dd><dt>Штат</dt><dd>Неизвестно.</dd><dt>Оборудование</dt><dd>Неизвестно.</dd></dl></article></section>`},
     {id:'spk', icon:'▧', color:'teal', title:'СПК', eyebrow:'Строительный продукт', lead:'Полный чек-лист: виды работ, специалисты, средства измерений, технологические карты, документы и десять этапов работы.', sources:[...products('02 PRODUCTS',['Учебный маршрут — СПК.md','Алгоритм — получение разрешительных документов.md','Полная таблица — виды работ, СПК и аттестация.md','Справочник — строительство и разрешительные документы.md','Паспорт продукта — 0101 СПК.md']),...products('04 EXPERT',['Чек-лист — СПК: работа эксперта.md'])], check:{q:'С чего менеджер начинает работу по СПК?', options:['С обещания срока выдачи','С уточнения видов работ и исходных данных','С выставления счёта'], answer:1, order:['Уточнить виды работ','Проверить исходные данные','Согласовать следующий шаг']}},
     {id:'attestation', icon:'⌂', color:'orange', title:'Аттестация', eyebrow:'Строительный продукт', lead:'Один учебный маршрут: работы, область, специалисты, документы, подтверждение и дальнейшие действия.', sources:[...products('02 PRODUCTS',['Учебный маршрут — аттестация в строительстве.md','Полный порядок — аттестация специалиста.md','Чек-лист — подтверждение аттестата.md','Паспорт продукта — 0104.02 Аттестация ГП.md','Паспорт продукта — 0104.03 Аттестация ПР.md','Паспорт продукта — 0104.04 Аттестация ИН.md','Паспорт продукта — 0104.05 Аттестация ГР.md','Паспорт продукта — 0104.06 Аттестация ГС.md','Паспорт продукта — 0104.07 Аттестация СТ.md','Паспорт продукта — 0104.08 Аттестация ФЗ.md','Паспорт продукта — 0104.09 Аттестация ОБ.md','Паспорт продукта — 0105 Подтверждение аттестата.md']),...products('04 EXPERT',['Чек-лист — аттестация: работа эксперта.md'])], check:{q:'Что нужно уточнить до предложения аттестации?', options:['Только удобный мессенджер','Направления работ, специалистов и исходные документы','Только размер скидки'], answer:1, order:['Уточнить направления','Проверить специалистов','Передать данные эксперту']}},
     {id:'iso-suot', icon:'◌', color:'violet', title:'ИСО и СУОТ', eyebrow:'Системы менеджмента', lead:'ISO 9001, ISO 27001, СУОТ 45001, периодика, разработка СУОТ и выбор решения для тендеров.', sources:[...products('02 PRODUCTS',['Учебный маршрут — ISO и СУОТ.md','Полный чек-лист — ISO, СУОТ и ISO 27001.md','Шпаргалка — ISO и СУОТ: решение для тендеров.md','Паспорт продукта — 0301 Сертификат ISO 9001.md','Паспорт продукта — 0302 Периодика ISO 9001.md','Паспорт продукта — 0303 Сертификат СУОТ 45001.md','Паспорт продукта — 0304 Периодика СУОТ 45001.md','Паспорт продукта — 0305 Международный ISO 27001.md','Паспорт продукта — 0306 СТБ ISO 27001.md','Паспорт продукта — 0307 Разработка СУОТ.md','Паспорт продукта — 0308 ИСО РФ.md','Паспорт продукта — 0309 ИСО нестандартная область.md','Паспорт продукта — 0310 ИСО 9001 Международный.md']),...products('04 EXPERT',['Чек-лист — ISO и СУОТ: работа эксперта.md'])], check:{q:'Чем ISO 9001 отличается от СУОТ 45001?', options:['Ничем','ISO 9001 — система менеджмента качества; СУОТ 45001 — система охраны труда','Оба документа относятся только к прайсу'], answer:1, order:['Выяснить задачу клиента','Проверить действующие документы','Выбрать маршрут с экспертом']}},
@@ -520,7 +531,7 @@
   }
   function isHiddenContactLine(value) { return /(?:^|[:—-]\s*)\[контакт скрыт\]\s*$/i.test(String(value||'').trim()); }
   function richText(value) {
-    const lines=esc(String(value||'').replace(/<br\s*\/?\s*>/gi,'\n')).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\`(.+?)\`/g, '<code>$1</code>')
+    const lines=esc(sourcePlainText(value)).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\`(.+?)\`/g, '<code>$1</code>')
       .split('\n').map(line=>cleanSourceLine(line.replace(/\s*\|\s*$/,'').trim())).filter(line=>line&&line!=='|'&&!isHiddenContactLine(line));
     const blocks=[], bullets=[];
     const flushBullets=()=>{if(bullets.length){blocks.push(`<ul>${bullets.map(item=>`<li>${item}</li>`).join('')}</ul>`);bullets.length=0;}};
@@ -557,10 +568,10 @@
     }).join('')}</div>`;
   }
   function inlineTableText(value) {
-    return esc(String(value||'').trim())
+    return esc(sourcePlainText(value).trim())
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/<br\s*\/?\s*>/gi, '<br>');
+      .replace(/\n/g, '<br>');
   }
   function standardTable(lines) {
     const rows=lines.map(line=>line.trim().replace(/^\||\|$/g,'').split('|').map(cell=>cell.trim()));
@@ -581,7 +592,7 @@
     return `<figure class="course-figure"><img src="/${esc(normalized)}" alt="${esc(String(alt||'').slice(0,180))}" loading="lazy"><figcaption class="course-figure-caption">${esc(alt)}</figcaption></figure>`;
   }
   function markdown(raw) {
-    const text=String(raw||'').replace(/^---[\s\S]*?---\s*/, '').replace(/## Первичный источник\s*[\s\S]*?(?=## Пол(?:ное содержимое|ный текст) из источника)/, '').replace(/^> Полный структурированный экспорт[^\n]*\n?/gm, '').replace(/^\[Открыть[^\n]*\]\([^\n]*\)\s*$/gm, '').replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'$2').replace(/\[\[([^\]]+)\]\]/g,'$1').replace(/\r/g,'');
+    const text=sourcePlainText(raw).replace(/^---[\s\S]*?---\s*/, '').replace(/## Первичный источник\s*[\s\S]*?(?=## Пол(?:ное содержимое|ный текст) из источника)/, '').replace(/^> Полный структурированный экспорт[^\n]*\n?/gm, '').replace(/^\[Открыть[^\n]*\]\([^\n]*\)\s*$/gm, '').replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g,'$2').replace(/\[\[([^\]]+)\]\]/g,'$1').replace(/\r/g,'');
     const lines=text.split('\n'), output=[];
     for(let index=0;index<lines.length;){
       if(/^:::flow\s*$/i.test(lines[index].trim())){const flow=[];index+=1;while(index<lines.length&&!/^:::\s*$/.test(lines[index].trim()))flow.push(lines[index++]);if(index<lines.length)index+=1;output.push(flowDiagram(flow));continue;}
@@ -636,7 +647,8 @@
   }
   function assistantChatModal() {
     const messages = state.chatMessages.length ? state.chatMessages.map(message=>`<article class="academy-chat-message ${message.role==='user'?'is-user':'is-assistant'}"><span>${message.role==='user'?'Вы':'Помощник'}</span><p>${chatText(message.text)}</p>${message.role==='assistant'?chatSourceList(message):''}</article>`).join('') : `<div class="academy-chat-empty"><b>Задайте вопрос по базе знаний</b><p>Например: «Какие СИ нужны для СПК?» или «Как подать заявку на СПК в Беларуси?»</p></div>`;
-    return `<div class="academy-chat-back" role="presentation" onclick="academyCloseChat(event)"><section class="academy-chat" role="dialog" aria-modal="true" aria-labelledby="academy-chat-title" onclick="event.stopPropagation()"><header><div><span>AI-ПОМОЩНИК MAVIS</span><h2 id="academy-chat-title">Спросите по базе знаний</h2></div><button class="academy-chat-close" aria-label="Закрыть чат" onclick="academyCloseChat()">×</button></header><div class="academy-chat-messages" id="academy-chat-messages">${messages}${state.chatLoading?`<article class="academy-chat-message is-assistant is-loading"><span>Помощник</span><p><i></i><i></i><i></i></p></article>`:''}</div>${state.chatError?`<p class="academy-chat-error">${esc(state.chatError)}</p>`:''}<form class="academy-chat-compose" onsubmit="event.preventDefault(); academyChatSend()"><textarea id="academy-chat-input" aria-label="Ваш вопрос" placeholder="Напишите вопрос…" oninput="academyChatInput(this.value)" onkeydown="academyChatKeydown(event)">${esc(state.chatInput)}</textarea><button type="submit" ${state.chatLoading||!state.chatInput.trim()?'disabled':''}>${state.chatLoading?'Отвечаю…':'Отправить'}</button></form><small>В ответе раздельно указаны материалы Mavis и открытые источники по Беларуси.</small></section></div>`;
+    const quickActions=state.chatMessages.length?'':`<div class="academy-chat-quick" aria-label="Готовые запросы"><button type="button" onclick="academyChatPrefill('Составь 10 вопросов для теста по СПК для менеджера. После каждого вопроса укажи правильный ответ и объяснение по материалам Mavis.')">Тест по продукту</button><button type="button" onclick="academyChatPrefill('Составь учебный кейс по СПК для эксперта: ситуация клиента, вводные, задания и критерии проверки.')">Кейс для эксперта</button><button type="button" onclick="academyChatPrefill('Составь практику для менеджера по первому разговору с клиентом: ситуация, вопросы диагностики, пример ответа и следующий шаг.')">Практика менеджера</button></div>`;
+    return `<div class="academy-chat-back" role="presentation" onclick="academyCloseChat(event)"><section class="academy-chat" role="dialog" aria-modal="true" aria-labelledby="academy-chat-title" onclick="event.stopPropagation()"><header><div><span>AI-ПОМОЩНИК MAVIS</span><h2 id="academy-chat-title">Спросите по базе знаний</h2></div><button class="academy-chat-close" aria-label="Закрыть чат" onclick="academyCloseChat()">×</button></header><div class="academy-chat-messages" id="academy-chat-messages">${messages}${state.chatLoading?`<article class="academy-chat-message is-assistant is-loading"><span>Помощник</span><p><i></i><i></i><i></i></p></article>`:''}</div>${quickActions}${state.chatError?`<p class="academy-chat-error">${esc(state.chatError)}</p>`:''}<form class="academy-chat-compose" onsubmit="event.preventDefault(); academyChatSend()"><textarea id="academy-chat-input" aria-label="Ваш вопрос" placeholder="Напишите вопрос…" oninput="academyChatInput(this.value)" onkeydown="academyChatKeydown(event)">${esc(state.chatInput)}</textarea><button type="submit" ${state.chatLoading||!state.chatInput.trim()?'disabled':''}>${state.chatLoading?'Отвечаю…':'Отправить'}</button></form><small>В ответе раздельно указаны материалы Mavis и открытые источники по Беларуси.</small></section></div>`;
   }
   function shell(inner) {
     const role = access?.role || state.role;
@@ -900,24 +912,75 @@
       target.innerHTML=workflow?`<div class="workflow-document">${workflow}</div>`:'<p>Не удалось найти заполненные рабочие материалы менеджера по этой теме.</p>';
     }catch(_){if(isCurrent())target.innerHTML='<div class="course-error"><b>Не удалось загрузить подробный ход работы.</b><span>Попробуйте открыть плитку ещё раз.</span></div>';}
   }
-  async function loadSPKMeasurementTools(){
-    const target=document.getElementById('workspace-spk-tools'),course=current();
-    if(!target||!course||course.id!=='spk'||!access)return;
-    const requestId=(state.spkToolsRequestId||0)+1;state.spkToolsRequestId=requestId;
-    const isCurrent=()=>state.spkToolsRequestId===requestId&&state.page==='course'&&state.course==='spk';
-    const path=course.sources.find(item=>/Паспорт продукта — 0101 СПК\.md$/u.test(item));
-    if(!path){target.innerHTML='<p>В этой плитке не подключён первичный источник перечня СИ.</p>';return;}
+  const productReferenceMatchers={
+    people:/(?:требован(?:ия)?\s+по\s+штату|специалист|штат|персонал|кадр|работник|итр\b|руководител|директор|прораб|мастер|главн(?:ый|ого) инженер|образован|квалификац|разряд|стаж)/i,
+    tools:/(?:средств(?:а)?\s+измерен|\bси\b|инструмент|оборудован|прибор|поверк|калибров|метролог)/i,
+  };
+  function passportSheet(raw,name){
+    const source=String(raw||'');
+    const escaped=String(name).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const match=new RegExp(`^##\\s+Лист:\\s*${escaped}\\s*$`,'im').exec(source);
+    if(!match)return '';
+    const remainder=source.slice(match.index+match[0].length);
+    const end=remainder.search(/^##\s+Лист:\s*/im);
+    return end>=0?remainder.slice(0,end):remainder;
+  }
+  function passportRows(raw,kind){
+    const source=String(raw||'');
+    const sheets=kind==='people'?['Общая','ВИДЫ РАБОТ']:['Общая'];
+    const extracted=sheets.map(sheet=>({sheet,content:passportSheet(source,sheet)})).filter(item=>item.content);
+    const sourceSheets=extracted.length?extracted:[{sheet:'Паспорт продукта',content:source}];
+    return sourceSheets.flatMap(({sheet,content})=>{
+      const rows={};
+      content.split('\n').forEach(line=>{
+        if(!/^\|/.test(line))return;
+        const cells=line.split('|').slice(1,-1).map(cell=>sourcePlainText(cell).trim());
+        const match=/^([A-Z]+)(\d+)$/.exec(cells[0]||'');
+        if(!match)return;
+        const row=match[2],column=match[1];
+        (rows[row]||(rows[row]={}))[column]=cells.slice(1).join(' | ').trim();
+      });
+      return Object.entries(rows).sort((a,b)=>Number(a[0])-Number(b[0])).map(([row,columns])=>({
+        row,sheet,
+        label:cleanSourceLine(columns.A||''),
+        content:cleanSourceLine(Object.entries(columns).filter(([column])=>column!=='A').map(([,value])=>value).filter(Boolean).join('\n')),
+      })).filter(item=>item.label&&item.content);
+    });
+  }
+  function productReferenceEntries(data,path,kind){
+    const matcher=productReferenceMatchers[kind];
+    const entries=passportRows(data?.content,kind);
+    const labelled=entries.filter(item=>matcher.test(item.label));
+    return (labelled.length?labelled:entries.filter(item=>matcher.test(`${item.label}\n${item.content}`))).map(item=>({...item,path}));
+  }
+  function productReferenceDetails(kind,entries){
+    const heading=kind==='people'?'специалистов':'инструментов и СИ';
+    if(!entries.length)return `<p class="workspace-empty">В подключённых паспортах этой темы не найден отдельный перечень ${heading}. Добавьте его в паспорт продукта или в собственный материал плитки.</p>`;
+    return `<p class="workspace-source-attribution">Перечни приведены из паспортов продукта. Откройте нужный блок: состав зависит от выбранного направления и работ клиента.</p><div class="workspace-reference-list">${entries.map(entry=>`<details class="workspace-reference-item"><summary><span>${esc(entry.label)}</span><small>${esc(entry.sheet)} · ${esc(sourceTitle(entry.path))}</small></summary><div class="workspace-reference-body">${richText(entry.content)}</div></details>`).join('')}</div>`;
+  }
+  async function loadProductReferenceLists(){
+    const course=current(),peopleTarget=document.getElementById('workspace-product-people'),toolsTarget=document.getElementById('workspace-product-tools');
+    if(!course||!access||(!peopleTarget&&!toolsTarget))return;
+    const paths=passportSourcesFor(course);
+    if(!paths.length)return;
+    const requestId=(state.productReferenceRequestId||0)+1;state.productReferenceRequestId=requestId;
+    const isCurrent=()=>state.productReferenceRequestId===requestId&&state.page==='course'&&state.course===course.id;
     try{
-      const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()});
-      if(!response.ok)throw new Error('source_unavailable');
-      const data=await response.json(),raw=String(data.content||'');
-      const line=raw.split('\n').find(item=>/^\| B16 \|/u.test(item));
-      if(!line)throw new Error('cell_missing');
-      const cell=line.split('|').slice(2,-1).join('|').trim();
-      if(!cell)throw new Error('cell_empty');
+      const results=await Promise.all(paths.map(async path=>{
+        const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()});
+        if(!response.ok)return null;
+        return {path,data:await response.json()};
+      }));
       if(!isCurrent())return;
-      target.innerHTML=`<p class="workspace-source-attribution">По первичному источнику: «${esc(sourceTitle(path))}», лист «Общая», ячейка B16. Состав СИ в паспорте зависит от заявленных работ.</p><div class="workspace-source-cell">${safeRichHtml(richText(cell))}</div>`;
-    }catch(_){if(isCurrent())target.innerHTML='<p>Не удалось загрузить перечень СИ из паспорта. Откройте первоисточник по ссылке в содержании плитки или повторите загрузку.</p>';}
+      const loaded=results.filter(Boolean);
+      if(peopleTarget)peopleTarget.innerHTML=productReferenceDetails('people',loaded.flatMap(item=>productReferenceEntries(item.data,item.path,'people')));
+      if(toolsTarget)toolsTarget.innerHTML=productReferenceDetails('tools',loaded.flatMap(item=>productReferenceEntries(item.data,item.path,'tools')));
+    }catch(_){
+      if(!isCurrent())return;
+      const message='<p class="workspace-empty">Не удалось загрузить перечень из паспорта продукта. Обновите плитку и повторите попытку.</p>';
+      if(peopleTarget)peopleTarget.innerHTML=message;
+      if(toolsTarget)toolsTarget.innerHTML=message;
+    }
   }
   function traineeAssignmentPanel(course){
     const assignment=course.assignment;if(!assignment)return '';
@@ -949,14 +1012,19 @@
     const editAction=canEditBase()&&path?`<button class="reader-edit" onclick="academyEditOpenedMaterial()">✎ Редактировать список</button>`:'';
     return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>РАБОЧИЕ КОНТАКТЫ</span><h1><i>${course.icon}</i>${esc(course.title)}</h1><p>Телефоны и ответственные по направлениям.</p></div><div class="reader-actions">${editAction}</div></header><section class="workspace-source contact-directory"><div>${documentPane}</div></section>`);
   }
+  function casesReader(course){
+    return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>${esc(course.eyebrow)}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1><p>${esc(course.lead)}</p></div><div class="reader-actions"><button class="reader-edit" type="button" onclick="academyAsk()">✦ Сгенерировать ещё кейс</button><button class="reader-edit" type="button" onclick="academyCopyLink('${course.id}')">Скопировать ссылку</button></div></header><article class="case-library-reader">${safeRichHtml(course.content)}</article>`);
+  }
   function reader(){
     const course=current();if(!course)return catalog();
     const role=access?.role||state.role,trainee=isTraineeWorkspace();
     if(trainee)return readerTraineeLegacy(course);
     if(course.id==='contacts')return contactsReader(course);
+    if(course.id==='cases')return casesReader(course);
     const audience=activeAudience(),workspace=workspaceFor(course,audience),indexes=sourceIndexesForAudience(course,audience),selected=selectedSourceFor(course),path=selected.path,completed=done(course),inlineEditing=canEditBase()&&state.inlineEditorPath===path;
     const sourceButtons=indexes.map(index=>`<button type="button" class="${index===selected.index?'active':''}" aria-current="${index===selected.index?'page':'false'}" onclick="academySource(${index})"><span>${String(index+1).padStart(2,'0')}</span><b>${esc(sourceTitle(course.sources[index]))}</b></button>`).join('');
     const list=items=>`<ul>${items.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`;
+    const hasProductReferences=passportSourcesFor(course).length>0;
     const documentPane=path?(inlineEditing?inlineMaterialEditor(course,path):`<section class="workspace-source" id="workspace-source"><div><h2>${esc(sourceTitle(path))}</h2><p>Полный материал для сверки деталей по текущему рабочему виду.</p></div><div id="course-document" class="course-document"><div class="course-loading"><b>Открываю материал…</b><span>Текст, таблицы и чек-листы загрузятся здесь.</span></div></div></section>`):'';
     const editAction=canEditBase()?`<button class="reader-edit" onclick="academyEditOpenedMaterial()" ${path?'':'disabled'}>✎ Редактировать текст</button><button class="reader-edit" onclick="academyEditTile('${course.id}')">⊕ Материалы плитки</button>`:'';
     const authored=course.content?`<section class="workspace-source custom-tile-document">${safeRichHtml(course.content)}</section>`:'';
@@ -966,9 +1034,12 @@
     const section=(id,title,body)=>body?`<section class="workspace-block" id="${id}"><h2>${title}</h2>${body}</section>`:'';
     const otherItems=[...workspace.tips.map(item=>`<li>${esc(item)}</li>`)].join('');
     const otherContent=`${otherItems?`<ul>${otherItems}</ul>`:''}${gpnContacts(course)}${tileAttachmentsReader(course)}${authored}`;
-    const spkTools=course.id==='spk'?'<div id="workspace-spk-tools"><div class="course-loading"><b>Загружаю перечень средств измерений из паспорта…</b></div></div>':'';
-    const outline=`${workspace.concept?'<a href="#workspace-concept">Понятие</a>':''}${workspace.people.length?'<a href="#workspace-people">Специалисты</a>':''}${workspace.tools.length||spkTools?'<a href="#workspace-tools">Инструменты</a>':''}${audience==='manager'||audience==='expert'?'<a href="#workspace-flow">Ход работы</a>':''}${otherContent?'<a href="#workspace-other">Другое</a>':''}${indexes.length?`<details class="workspace-source-list"><summary>Источники по теме · ${indexes.length}</summary>${sourceButtons}</details>`:''}`;
-    return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>${esc(course.eyebrow||'РАБОЧАЯ ТЕМА')}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1></div><div class="reader-actions">${editAction}<button class="reader-presentation" onclick="academyPresentation('${course.id}')">Открыть презентацию</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику</button><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header>${staffModeControl()}<section class="reader-layout role-reader-layout"><aside class="reader-outline"><b>Содержание плитки</b>${outline}<div class="reader-practice"><span>После чтения</span><b>Закрепите логику на кейсе по этой роли.</b><button type="button" onclick="academyTest('${course.id}')">Открыть практику →</button></div></aside><article class="reader-content role-reader-content">${section('workspace-concept','Понятие',workspace.concept?`<p>${esc(workspace.concept)}</p>`:noItems)}${section('workspace-people','Специалисты',workspace.people.length?list(workspace.people):noItems)}${section('workspace-tools','Инструменты',spkTools|| (workspace.tools.length?list(workspace.tools):noItems))}${detailedManagerFlow}${detailedExpertFlow}${section('workspace-other','Другое',otherContent)}${documentPane}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Плитка изучена':'✓ Я изучил(а) эту плитку'}</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику →</button></div></article></section>`);
+    const productPeople=hasProductReferences?'<div id="workspace-product-people"><div class="course-loading"><b>Загружаю специалистов из паспортов продукта…</b></div></div>':'';
+    const productTools=hasProductReferences?'<div id="workspace-product-tools"><div class="course-loading"><b>Загружаю инструменты и СИ из паспортов продукта…</b></div></div>':'';
+    const peopleContent=productPeople||(workspace.people.length?list(workspace.people):noItems);
+    const toolsContent=productTools||(workspace.tools.length?list(workspace.tools):noItems);
+    const outline=`${workspace.concept?'<a href="#workspace-concept">Понятие</a>':''}${hasProductReferences||workspace.people.length?'<a href="#workspace-people">Специалисты</a>':''}${hasProductReferences||workspace.tools.length?'<a href="#workspace-tools">Инструменты и СИ</a>':''}${audience==='manager'||audience==='expert'?'<a href="#workspace-flow">Ход работы</a>':''}${otherContent?'<a href="#workspace-other">Другое</a>':''}${indexes.length?`<details class="workspace-source-list"><summary>Источники по теме · ${indexes.length}</summary>${sourceButtons}</details>`:''}`;
+    return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>${esc(course.eyebrow||'РАБОЧАЯ ТЕМА')}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1></div><div class="reader-actions">${editAction}<button class="reader-presentation" onclick="academyPresentation('${course.id}')">Открыть презентацию</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику</button><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header>${staffModeControl()}<section class="reader-layout role-reader-layout"><aside class="reader-outline"><b>Содержание плитки</b>${outline}<div class="reader-practice"><span>После чтения</span><b>Закрепите логику на кейсе по этой роли.</b><button type="button" onclick="academyTest('${course.id}')">Открыть практику →</button></div></aside><article class="reader-content role-reader-content">${section('workspace-concept','Понятие',workspace.concept?`<p>${esc(workspace.concept)}</p>`:noItems)}${section('workspace-people','Специалисты',peopleContent)}${section('workspace-tools','Инструменты и СИ',toolsContent)}${detailedManagerFlow}${detailedExpertFlow}${section('workspace-other','Другое',otherContent)}${documentPane}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Плитка изучена':'✓ Я изучил(а) эту плитку'}</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику →</button></div></article></section>`);
   }
   function tileAttachmentsEditor(tile,custom){
     const items=tileAttachments(tile), attachmentRows=items.length?`<div class="library-attachment-chips">${items.map((item,index)=>`<span><i>${attachmentIcon(item.kind)}</i>${esc(ATTACHMENT_TYPES[item.kind])}: ${esc(item.title)}<button type="button" aria-label="Убрать ${esc(item.title)}" onclick="academyRemoveLibraryAttachment('${esc(tile.id)}',${custom},${index})">×</button></span>`).join('')}</div>`:'<p class="library-no-sources">Внешних материалов пока нет.</p>';
@@ -983,7 +1054,7 @@
   const editableSources=()=>[...new Set([...baseLibraryCourses().flatMap(course=>course.sources),...FULL_LIBRARY_EXTRA_SOURCES,...state.librarySourcePaths])];
   function sourceEditor(){const paths=editableSources(),path=state.sourceEditorPath||paths[0]||'';return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results curriculum-editor"><span>РУКОВОДИТЕЛЬ · РЕДАКТОР БАЗЫ ЗНАНИЙ</span><h1>Редактор материалов</h1><p>Ниже — исходные материалы, а не плитки каталога. Ищите по названию и открывайте нужный документ: поле не перерисовывается при наборе, поэтому курсор остаётся на месте.</p><label>Найти материал<input class="academy-source-search" placeholder="Например: МЧС, металл, договор…" oninput="academyFilterSourceEditor(this)"></label><div class="academy-source-picker" aria-label="Исходные материалы">${paths.map(item=>`<button type="button" data-source-picker="${esc((sourceTitle(item)+' '+item).toLocaleLowerCase('ru'))}" class="${item===path?'active':''}" onclick="academySelectSourceEditor('${esc(item)}')"><small>${esc(item.split('/')[0])}</small><b>${esc(sourceTitle(item))}</b></button>`).join('')}</div><div class="rich-editor-toolbar" aria-label="Форматирование текста"><button type="button" onmousedown="event.preventDefault();academyFormatText('bold')"><b>Ж</b></button><button type="button" onmousedown="event.preventDefault();academyFormatText('italic')"><i>К</i></button><button type="button" onmousedown="event.preventDefault();academyFormatText('underline')"><u>Ч</u></button><button type="button" onmousedown="event.preventDefault();academyFormatText('insertUnorderedList')">• Список</button><button type="button" onmousedown="event.preventDefault();academyFormatText('formatBlock','h3')">Заголовок</button><input aria-label="Цвет выделенного текста" type="color" value="#087f76" oninput="academyFormatText('foreColor',this.value)"></div><div id="source-rich-editor" class="rich-editor source-rich-editor" contenteditable="true">${state.sourceEditorLoading?'<p>Загружаю материал…</p>':safeRichHtml(state.sourceEditorHtml)}</div><div class="editor-actions"><button class="reader-test" ${state.sourceEditorSaving||state.sourceEditorLoading?'disabled':''} onclick="academySaveSourceEditor()">${state.sourceEditorSaving?'Сохраняю…':'Сохранить материал'}</button></div>${state.sourceEditorError?`<p class="exam-error">${esc(state.sourceEditorError)}</p>`:''}</section>`)}
   function bindLibraryAutosave(){const editor=document.querySelector('.curriculum-editor');if(!editor)return;const queue=event=>{if(event.target?.matches('[data-library-field]'))window.academyQueueLibrarySave();};editor.oninput=queue;editor.onchange=queue;}
-  function render() { if (!access) { state.login=true; el.innerHTML=loginLanding(); return; } state.login=false; el.innerHTML = state.page === 'course' ? reader() : state.page === 'presentation' ? presentation() : state.page === 'exam' ? finalExam() : state.page === 'test-hub' ? testHub() : state.page === 'leader-results' ? leaderResults() : state.page === 'curriculum-editor' ? curriculumEditor() : state.page === 'library-editor' ? libraryEditor() : state.page === 'source-editor' ? sourceEditor() : state.page === 'governance' ? governance() : catalog(); if (state.page==='library-editor') bindLibraryAutosave(); if (state.page==='leader-results') injectLeaderOperationalPanel(); if (state.page==='course'){loadDocument();loadManagerDetailedWorkflow();loadExpertPassportWorkflow();loadSPKMeasurementTools();} if (state.page==='presentation') loadPresentationDocument(); }
+  function render() { if (!access) { state.login=true; el.innerHTML=loginLanding(); return; } state.login=false; el.innerHTML = state.page === 'course' ? reader() : state.page === 'presentation' ? presentation() : state.page === 'exam' ? finalExam() : state.page === 'test-hub' ? testHub() : state.page === 'leader-results' ? leaderResults() : state.page === 'curriculum-editor' ? curriculumEditor() : state.page === 'library-editor' ? libraryEditor() : state.page === 'source-editor' ? sourceEditor() : state.page === 'governance' ? governance() : catalog(); if (state.page==='library-editor') bindLibraryAutosave(); if (state.page==='leader-results') injectLeaderOperationalPanel(); if (state.page==='course'){loadDocument();loadManagerDetailedWorkflow();loadExpertPassportWorkflow();loadProductReferenceLists();} if (state.page==='presentation') loadPresentationDocument(); }
   async function academySaveError(response,fallback){const body=await response.json().catch(()=>({}));if(body.error==='persistent_storage_not_configured')return 'Постоянное хранилище ещё не подключено: материал не сохранён.';if(body.error==='persistent_storage_unavailable')return 'Постоянное хранилище временно недоступно: материал не сохранён. Повторите позже.';return fallback;}
   window.academyEditOpenedMaterial=()=>{if(!canEditBase())return;const course=current(),{path}=selectedSourceFor(course);if(!path)return;state.inlineEditorPath=path;state.inlineEditorHtml='';state.inlineEditorError='';academyLoadInlineMaterial();render();};
   window.academyCloseInlineEditor=()=>{state.inlineEditorPath='';state.inlineEditorHtml='';state.inlineEditorError='';state.inlineEditorLoading=false;state.inlineEditorSaving=false;render();};
@@ -1345,6 +1416,7 @@
   window.academyAsk=()=>{if(!access){state.login=true;return render();}state.chat=true;state.chatError='';render();setTimeout(()=>document.getElementById('academy-chat-input')?.focus(),0);};
   window.academyCloseChat=event=>{if(event&&event.target!==event.currentTarget)return;state.chat=false;state.chatError='';render();};
   window.academyChatInput=value=>{state.chatInput=value;const submit=document.querySelector('.academy-chat-compose button');if(submit)submit.disabled=state.chatLoading||!state.chatInput.trim();};
+  window.academyChatPrefill=value=>{state.chatInput=String(value||'');render();requestAnimationFrame(()=>document.getElementById('academy-chat-input')?.focus());};
   window.academyChatKeydown=event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();academyChatSend();}};
   window.academyChatSend=async()=>{const question=state.chatInput.trim();if(!question||state.chatLoading)return;state.chatMessages.push({role:'user',text:question});state.chatInput='';state.chatLoading=true;state.chatError='';render();try{const response=await fetch('/api/ai/ask',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({question,history:state.chatMessages.slice(-7,-1)})});const data=await response.json();if(!response.ok)throw new Error(data.message||'Помощник временно недоступен.');if(!data.answer)throw new Error(data.message||'Не удалось получить ответ.');state.chatMessages.push({role:'assistant',text:data.answer,internalSources:data.sources||[],externalSources:data.external_sources||[]});}catch(error){state.chatError=error.message||'Помощник временно недоступен. Попробуйте ещё раз.';}state.chatLoading=false;render();setTimeout(()=>{const messages=document.getElementById('academy-chat-messages');if(messages)messages.scrollTop=messages.scrollHeight;document.getElementById('academy-chat-input')?.focus();},0);};
   window.setScreen=(screen, track)=>screen==='manager'?academyCatalog():oldSetScreen(screen,track);
