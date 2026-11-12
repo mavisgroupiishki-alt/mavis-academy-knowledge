@@ -241,7 +241,7 @@ class CourseSourceContractTests(unittest.TestCase):
         for passport in passports:
             self.assertIn(passport, source)
             self.assertTrue((server.KNOWLEDGE_ROOT / "02 PRODUCTS" / passport).is_file(), passport)
-        self.assertIn("const TRAINEE_TABLE_ONLY_IDS=new Set(['tr-d1-video','tr-d1-company']);", source)
+        self.assertIn("const TRAINEE_TABLE_ONLY_IDS=new Set(['tr-d1-video']);", source)
         self.assertNotIn("'tr-d1-company':'09 SOP/Учебный маршрут — Mavis Group: компания и словарь.md'", source)
         self.assertIn("const TRAINEE_DAY_ONE_SOURCE_PATHS=", source)
         self.assertIn("const TRAINEE_DAY_ONE_SOURCE_COURSES=", source)
@@ -329,19 +329,19 @@ class CourseSourceContractTests(unittest.TestCase):
             "tr-d1-suot45001-periodic",
         ):
             self.assertIn(course_id, day_one)
-        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.3'", source)
+        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.4'", source)
         self.assertIn("traineeVideoTile()", source)
         self.assertIn("'Общая информация'", source)
         self.assertIn("'О компании.','Чем занимается компания.','Кто клиенты компании.','Структура отдела продаж.'", source)
-        self.assertIn("const TRAINEE_TABLE_ONLY_IDS=new Set(['tr-d1-video','tr-d1-company']);", source)
+        self.assertIn("'03 SALES/Общая информация.md'", source)
         self.assertIn("'Повторение: продукты первого дня'", source)
         self.assertIn("'Повторение: продукты и скрипт'", source)
 
-    def test_day_one_video_is_rendered_as_a_large_inline_player(self):
+    def test_day_one_video_opens_without_an_unreliable_inline_player(self):
         styles = (server.ROOT / "trainee-flow.css").read_text(encoding="utf-8")
 
-        self.assertIn(".trainee-media.trainee-video iframe", styles)
-        self.assertIn("min-height:480px", styles)
+        self.assertIn(".trainee-video-launch", styles)
+        self.assertIn("Открыть видео-обучение", (server.ROOT / "manager-library.js").read_text(encoding="utf-8"))
 
     def test_saved_trainee_plan_allows_leader_to_hide_or_merge_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
