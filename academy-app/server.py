@@ -47,7 +47,7 @@ PERSISTENT_STATE_KEYS = {
     "revisions": "academy:revisions",
     "academy_events": "academy:events",
 }
-CURRENT_TRAINEE_PLAN_VERSION = "sales-internship-sheet-2026-11-12.4"
+CURRENT_TRAINEE_PLAN_VERSION = "sales-internship-sheet-2026-11-12.5"
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
 DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
 LIBRARY_CATALOG_STORE = ROOT / "data" / "library-catalog.json"

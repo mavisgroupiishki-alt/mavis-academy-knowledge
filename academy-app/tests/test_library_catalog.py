@@ -329,7 +329,7 @@ class CourseSourceContractTests(unittest.TestCase):
             "tr-d1-suot45001-periodic",
         ):
             self.assertIn(course_id, day_one)
-        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.4'", source)
+        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.5'", source)
         self.assertIn("traineeVideoTile()", source)
         self.assertIn("'Общая информация'", source)
         self.assertIn("'О компании.','Чем занимается компания.','Кто клиенты компании.','Структура отдела продаж.'", source)
@@ -444,6 +444,11 @@ class PersistentStateTransportTests(unittest.TestCase):
         worker = (server.ROOT / "cloudflare" / "mavis-academy-state.js").read_text(encoding="utf-8")
         for key in server.PERSISTENT_STATE_KEYS.values():
             self.assertIn(f'"{key}"', worker)
+
+    def test_cloudflare_worker_keeps_render_awake_on_schedule(self):
+        worker = (server.ROOT / "cloudflare" / "mavis-academy-state.js").read_text(encoding="utf-8")
+        self.assertIn("async scheduled", worker)
+        self.assertIn('https://mavis-academy.onrender.com/healthz', worker)
 
     def test_state_request_uses_guarded_rpc_and_never_exposes_access_token_in_url(self):
         captured = {}

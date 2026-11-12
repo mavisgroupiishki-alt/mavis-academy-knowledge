@@ -14,6 +14,16 @@ const json = (value, status = 200) => new Response(JSON.stringify(value), {
 });
 
 export default {
+  async scheduled(_event, _env, ctx) {
+    ctx.waitUntil(
+      fetch("https://mavis-academy.onrender.com/healthz", {
+        headers: { "user-agent": "Mavis-Academy-Uptime/1.0" },
+      }).then(response => {
+        if (!response.ok) throw new Error(`healthz_${response.status}`);
+      }),
+    );
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname !== "/state") return json({ error: "not_found" }, 404);
