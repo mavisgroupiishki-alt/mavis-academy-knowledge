@@ -590,11 +590,21 @@ def is_safe_rich_text(value):
     The browser editor only produces a small formatting subset.  This second
     server-side check makes stored lessons safe even if a request is forged.
     """
+    text = value or ""
+    # The onboarding video is intentionally embedded inside the first trainee
+    # tile. Only the fixed Google Vids origin is permitted; every other frame
+    # remains rejected along with executable markup.
+    frame_sources = re.findall(r'''(?is)<\s*iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']''', text)
+    if re.search(r"(?is)<\s*iframe\b", text) and (
+        not frame_sources
+        or any(not re.fullmatch(r"https://docs\.google\.com/videos/d/[A-Za-z0-9_-]+/(?:play|embed)(?:\?[^\s]*)?", source) for source in frame_sources)
+    ):
+        return False
     forbidden = re.compile(
-        r"(?is)<\s*/?\s*(script|style|iframe|object|embed|svg|math|link|meta|base)\b"
+        r"(?is)<\s*/?\s*(script|style|object|embed|svg|math|link|meta|base)\b"
         r"|\bon[a-z]+\s*=|javascript\s*:|data\s*:\s*text/html|expression\s*\(|url\s*\("
     )
-    return not forbidden.search(value or "")
+    return not forbidden.search(text)
 
 
 def read_trainee_curriculum():
