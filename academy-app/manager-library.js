@@ -137,6 +137,17 @@
     tile.content=traineeLesson('Видео-обучение',tile.lead,[{title:'Что необходимо изучить',items:['О компании.','Чем занимается компания.','Кто клиенты компании.','Структура отдела продаж.']}])+`<figure class="trainee-media trainee-video"><iframe title="Видео-обучение Mavis" src="https://docs.google.com/videos/d/1i3c78SieIX4SOQVvViOQ1t5WSzKgY4UuCoqecyZ0fus/play" allow="autoplay; fullscreen" allowfullscreen></iframe><figcaption>Видео-обучение.</figcaption></figure>`;
     return tile;
   };
+  const traineeGeneralInfoTile=()=>{
+    const assignment=['После изучения своими словами кратко написать в отдельный Google Doc:','чем занимается компания;','кто наш клиент (целевая аудитория);','зачем клиенту нужны наши услуги;','почему клиенту выгодно работать именно с нами.'];
+    const tile=traineeSheetTile('tr-d1-company','Общая информация','День 01 · таблица стажировки','База знаний NotebookLM — доступ и ссылку предоставляет РОП. Доп. информация по продуктам.',assignment,'sales',[]);
+    // This card is deliberately literal: it mirrors the Day 01 spreadsheet
+    // entry and must never pull the old staff "company and glossary" copy.
+    tile.content=traineeLesson('Общая информация',tile.lead,[
+      {title:'Материалы из таблицы',items:['База знаний NotebookLM — доступ и ссылку предоставляет РОП.','Доп. информация по продуктам:','0101. СПК.','0104.07. Аттестация СТ.','0104.06. Аттестация ГС.','0301. Сертификат ISO 9001.','0302. Периодика ISO 9001.','0303. Сертификат СУОТ 45001.','0304. Периодика СУОТ 45001.']},
+      {title:'Задание из таблицы',items:assignment}
+    ]);
+    return tile;
+  };
   // День 01 должен открывать не рекламный пересказ, а полный паспорт продукта,
   // уже лежащий внутри базы.  Карта намеренно содержит только локальные файлы:
   // сотрудник читает материал в Academy, а не уходит в исходную таблицу.
@@ -208,7 +219,7 @@
   };
   const TRAINEE_SHEET_COURSES = [
     traineeVideoTile(),
-    traineeSheetTile('tr-d1-company','Общая информация','День 01 · таблица стажировки','База знаний NotebookLM — доступ и ссылку предоставляет РОП. Дополнительная информация по продуктам.',['После изучения кратко напишите в отдельном Google Doc: чем занимается компания; кто наш клиент (целевая аудитория); зачем клиенту нужны наши услуги; почему клиенту выгодно работать именно с нами.'],'sales',[]),
+    traineeGeneralInfoTile(),
     traineeEmbeddedCourse('tr-spk','tr-d1-spk'),
     traineeEmbeddedCourse('tr-att-st','tr-d1-attestation-st'),
     traineeEmbeddedCourse('tr-att-gs','tr-d1-attestation-gs'),
@@ -248,7 +259,7 @@
     {title:'Офис: звонки и экзамен', intro:'Повторение, 10 холодных звонков, анализ результатов, первое КП и экзамен.', result:'Анализ звонков, первое КП и итоговая аттестация по 20 вопросам.', courseIds:['tr-d4-repeat-day1','tr-d4-ten-calls','tr-d4-call-log','tr-d4-first-kp','tr-d4-exam']},
   ];
   const TRAINEE_LEGACY_COURSE_IDS=new Set(['tr-d3-script-practice','tr-d4-products','tr-d4-calls','tr-d4-call-analysis','tr-d4-rop']);
-  const TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.2';
+  const TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.3';
   const FINAL_EXAM_BANK = [
     {q:'Клиент выполняет монтаж на объекте 3 класса и просит «просто СПК». Что уточнить первым?', options:['Только срок выдачи','Виды работ, класс объекта, специалистов и исходные документы','Размер скидки'], answer:1},
     {q:'После звонка клиент сказал: «Перезвоните во вторник после совещания». Какой следующий шаг верный?', options:['Оставить комментарий без срока','Создать задачу на вторник с темой разговора и ответственным','Ждать, пока клиент напишет сам'], answer:1},
@@ -280,7 +291,7 @@
   // table. They deliberately do not inherit the staff “company and glossary”
   // source, because it is a different material.
   const TRAINEE_TABLE_ONLY_IDS=new Set(['tr-d1-video','tr-d1-company']);
-  const TRAINEE_CURRICULUM_TEMPLATE='sales-internship-sheet-2026-11-12.2';
+  const TRAINEE_CURRICULUM_TEMPLATE='sales-internship-sheet-2026-11-12.3';
   const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>{
     if(!TRAINEE_COURSE_IDS.has(course?.id))return course;
     const normalized=course;

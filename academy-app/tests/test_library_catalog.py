@@ -329,7 +329,7 @@ class CourseSourceContractTests(unittest.TestCase):
             "tr-d1-suot45001-periodic",
         ):
             self.assertIn(course_id, day_one)
-        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.2'", source)
+        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.3'", source)
         self.assertIn("traineeVideoTile()", source)
         self.assertIn("'Общая информация'", source)
         self.assertIn("'О компании.','Чем занимается компания.','Кто клиенты компании.','Структура отдела продаж.'", source)
