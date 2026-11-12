@@ -3,6 +3,7 @@ const ALLOWED_KEYS = new Set([
   "academy:document-overrides",
   "academy:library-catalog",
   "academy:trainee-submissions",
+  "academy:trainee-registry",
   "academy:material-metadata",
   "academy:revisions",
   "academy:events",

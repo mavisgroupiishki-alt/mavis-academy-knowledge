@@ -201,13 +201,15 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("!isExpertSource(path)", source)
         self.assertIn("!isManagerSource(path)", source)
         self.assertIn("Понятие", source)
-        self.assertIn("Инструменты и документы", source)
+        self.assertIn("'workspace-tools','Инструменты'", source)
+        self.assertIn("'workspace-other','Другое'", source)
+        self.assertIn("academyReturnToStaff", source)
+        self.assertIn("!['full-library','company'].includes(course.id)", source)
         self.assertIn("Полный рабочий регламент менеджера", source)
         self.assertNotIn('<a href="#workspace-tips">Подсказки</a>', source)
         self.assertNotIn("Подробный ход работы из паспортов", source)
         self.assertIn("workflow-document", source)
-        self.assertIn("Фокус менеджера", source)
-        self.assertIn("Фокус эксперта", source)
+        self.assertNotIn("const roleFocus=", source)
         self.assertIn("window.academyAudience=", source)
 
     def test_trainee_spk_is_a_standalone_curriculum_lesson(self):

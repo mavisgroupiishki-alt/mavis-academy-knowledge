@@ -43,6 +43,7 @@ PERSISTENT_STATE_KEYS = {
     "document_overrides": "academy:document-overrides",
     "library_catalog": "academy:library-catalog",
     "trainee_submissions": "academy:trainee-submissions",
+    "trainee_registry": "academy:trainee-registry",
     "material_metadata": "academy:material-metadata",
     "revisions": "academy:revisions",
     "academy_events": "academy:events",
@@ -53,6 +54,7 @@ DOCUMENT_OVERRIDES_STORE = ROOT / "data" / "document-overrides.json"
 LIBRARY_CATALOG_STORE = ROOT / "data" / "library-catalog.json"
 FALLBACK_RESULTS_STORE = ROOT / "data" / "academy-local-results.json"
 TRAINEE_SUBMISSIONS_STORE = ROOT / "data" / "trainee-submissions.json"
+TRAINEE_REGISTRY_STORE = ROOT / "data" / "trainee-registry.json"
 MATERIAL_METADATA_STORE = ROOT / "data" / "material-metadata.json"
 REVISIONS_STORE = ROOT / "data" / "academy-revisions.json"
 ACADEMY_EVENTS_STORE = ROOT / "data" / "academy-events.json"
@@ -523,6 +525,32 @@ def register_fallback_trainee(candidate_name):
     else:
         value["trainees"].append({"candidate_name": candidate_name, "first_seen_at": now, "last_seen_at": now})
     write_fallback_results(value)
+
+
+def register_trainee(candidate_name):
+    """Persist every registered trainee independently of assessment RPCs."""
+    candidate_name = " ".join(str(candidate_name or "").split())[:80]
+    if len(candidate_name) < 2:
+        return
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
+        items = registry.get("items", []) if isinstance(registry, dict) else []
+        items = [item for item in items if isinstance(item, dict)]
+        existing = next((item for item in items if str(item.get("candidate_name", "")).casefold() == candidate_name.casefold()), None)
+        if existing:
+            existing["last_seen_at"] = now
+        else:
+            items.append({"candidate_name": candidate_name, "first_seen_at": now, "last_seen_at": now})
+        write_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": items[-1000:]})
+    except (OSError, URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError, TypeError):
+        # Keep sign-in available; the separate results RPC and fallback remain
+        # independent paths when the registry provider is temporarily down.
+        pass
+    try:
+        register_fallback_trainee(candidate_name)
+    except OSError:
+        pass
 
 
 def save_fallback_attempt(row):
@@ -1100,6 +1128,24 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json(payload)
 
     def leader_operational_payload(self, rows, trainees):
+        try:
+            registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
+            registered = registry.get("items", []) if isinstance(registry, dict) else []
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError, TypeError):
+            registered = []
+        fallback_trainees = read_fallback_results().get("trainees", [])
+        merged_trainees = {}
+        for item in [*(trainees if isinstance(trainees, list) else []), *registered, *fallback_trainees]:
+            if not isinstance(item, dict):
+                continue
+            name = " ".join(str(item.get("candidate_name", "")).split())
+            if len(name) < 2:
+                continue
+            key = name.casefold()
+            if key not in merged_trainees:
+                merged_trainees[key] = {**item, "candidate_name": name}
+            else:
+                merged_trainees[key].update({k: v for k, v in item.items() if v and k != "candidate_name"})
         submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
         events = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
         event_items = events.get("items", []) if isinstance(events, dict) else []
@@ -1111,7 +1157,7 @@ class Handler(SimpleHTTPRequestHandler):
             course_opens[course_id] = course_opens.get(course_id, 0) + 1
         return {
             "results": rows,
-            "trainees": trainees,
+            "trainees": list(merged_trainees.values()),
             "submissions": (submissions.get("items", []) if isinstance(submissions, dict) else [])[-100:],
             "analytics": {"course_opens": course_opens, "client_errors": errors[-50:], "opened_materials": len(opens)},
         }
@@ -1364,7 +1410,7 @@ class Handler(SimpleHTTPRequestHandler):
             # A trainee appears in the leader list when they enter Academy,
             # rather than only after completing their first assessment.
             if role == "trainee":
-                register_fallback_trainee(display_name)
+                register_trainee(display_name)
                 try:
                     _, _, write_token = results_store_config()
                     results_request("POST", "rpc/academy_register_trainee", {
