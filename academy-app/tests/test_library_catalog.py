@@ -196,7 +196,10 @@ class CourseSourceContractTests(unittest.TestCase):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("id:'cases'", source)
-        self.assertIn("КЕЙС ДЛЯ СТАЖЁРА ПРОДАЖИ · ВАРИАНТ 1", source)
+        self.assertIn("Государственное предприятие «УКС Крупского района»", source)
+        self.assertIn("Кейс № 8: Аттестация СТ и СПК", source)
+        self.assertIn("Кейс № 10: Первое касание и «лишние» вопросы", source)
+        self.assertNotIn("ООО «РОГА И КОПЫТА»", source)
         self.assertIn("function casesReader(course)", source)
         case_reader = source.split("function casesReader(course)", 1)[1].split("function reader(){", 1)[0]
         self.assertNotIn("workspace-people", case_reader)
