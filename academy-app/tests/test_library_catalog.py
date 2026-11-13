@@ -219,6 +219,35 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("| A16 | средства измерения |", spk_passport)
         self.assertIn("рулетка измерительная металлическая", spk_passport)
 
+    def test_metal_and_sro_have_role_checklists_with_complete_reference_lists(self):
+        project = server.ROOT.parent
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        access = json.loads((server.ROOT / "course-access.json").read_text(encoding="utf-8"))
+
+        expected = {
+            "metal": [
+                "03 SALES/Чек-лист — металл: менеджер.md",
+                "04 EXPERT/Чек-лист — металл: эксперт.md",
+            ],
+            "sro": [
+                "03 SALES/Чек-лист — СРО: менеджер.md",
+                "04 EXPERT/Чек-лист — СРО: эксперт.md",
+            ],
+        }
+        for course, paths in expected.items():
+            for path in paths:
+                self.assertIn(path, access[course]["p"])
+                self.assertTrue((project / path).is_file(), path)
+
+        metal = (project / expected["metal"][1]).read_text(encoding="utf-8")
+        sro = (project / expected["sro"][1]).read_text(encoding="utf-8")
+        self.assertIn("УШС-3", metal)
+        self.assertIn("Лист: Ход работы эксперта", metal)
+        self.assertIn("Национальный реестр специалистов НОСТРОЙ", sro)
+        self.assertIn("Лист: Ход работы эксперта", sro)
+        self.assertIn("staticReferences:true", source)
+        self.assertIn("Открыть перечень инструментов и СИ", source)
+
     def test_staff_reader_uses_role_specific_workspaces(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
