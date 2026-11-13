@@ -219,6 +219,20 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("| A16 | средства измерения |", spk_passport)
         self.assertIn("рулетка измерительная металлическая", spk_passport)
 
+    def test_product_reader_groups_source_material_and_uses_product_specific_practice(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        styles = (server.ROOT / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("const sourceBlockKind=title=>", source)
+        self.assertIn('class="source-block source-block--${block.kind}"', source)
+        self.assertNotIn("Открыть полный первоисточник", source)
+        self.assertIn("const PRODUCT_PRACTICE=", source)
+        for product in ("spk", "attestation", "'iso-suot'"):
+            self.assertIn(f"{product}:", source)
+        self.assertIn("if(productPractice)return productPractice", source)
+        self.assertIn(".source-blocks", styles)
+        self.assertIn(".source-block--tools", styles)
+
     def test_metal_and_sro_have_role_checklists_with_complete_reference_lists(self):
         project = server.ROOT.parent
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")

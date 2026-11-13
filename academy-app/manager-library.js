@@ -23,7 +23,7 @@
       if(!allowed.has(node.tagName.toLowerCase())){node.replaceWith(...node.childNodes);return;}
       const href=node.getAttribute('href')||'', src=node.getAttribute('src')||'', alt=node.getAttribute('alt')||'', color=node.getAttribute('color')||'', style=node.getAttribute('style')||'', className=node.getAttribute('class')||'';
       [...node.attributes].forEach(attribute=>node.removeAttribute(attribute.name));
-      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','trainee-sheet-source','trainee-video-source','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption','case-library','case-library-note'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
+      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','trainee-sheet-source','trainee-video-source','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption','case-library','case-library-note','source-document-title','source-blocks','source-block','source-block-heading','source-block-label','source-block-body','source-block--overview','source-block--people','source-block--tools','source-block--workflow','source-block--important','source-block--reference'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
       if(node.tagName==='A'){if(/^https:\/\//i.test(href))node.setAttribute('href',href);else node.replaceWith(...node.childNodes);}
       if(node.tagName==='IMG'){const normalized=src.replace(/^\//,'');if(/^media\/[a-z0-9._-]+\.(?:png|jpe?g|webp)$/i.test(normalized)){node.setAttribute('src',`/${normalized}`);node.setAttribute('alt',alt.slice(0,180));node.setAttribute('loading','lazy');}else node.remove();}
       if(node.tagName==='IFRAME'){if(/^https:\/\/docs\.google\.com\/videos\/d\/[a-zA-Z0-9_-]+\/(?:play|embed)(?:\?[^\s]*)?$/i.test(src)){node.setAttribute('src',src);node.setAttribute('title',alt||'Видео-обучение');node.setAttribute('allow','autoplay; fullscreen');node.setAttribute('allowfullscreen','');}else node.remove();}
@@ -526,6 +526,24 @@
     'expert-flow':{prompt:'В экспертный отдел передают сделку. Что должно быть передано вместе с ней?',options:['Услуга и полные исходные данные','Контекст договорённости с клиентом','Следующее действие, срок и ответственный','Только название компании','Общий статус без деталей'],answers:[0,1,2]},
     'full-library':{prompt:'Руководитель проверяет ответ стажёра по продукту. Какие действия корректны?',options:['Открыть первоисточник по продукту','Сверить факты с регламентом или скриптом','Зафиксировать, какой материал нужно повторить','Опираться только на общее впечатление','Удалить вопрос без проверки'],answers:[0,1,2]}
   };
+  // Product questions are deliberately separate from generic training checks.
+  // Every correct answer below is taken from the attached product passport or
+  // the working checklist, so a trainee must know the product rather than
+  // merely select the most polite sales phrase.
+  const PRODUCT_PRACTICE={
+    spk:{
+      check:{q:'Клиент готовит СПК. Какой набор соответствует базовым требованиям, указанным в паспорте продукта?',options:['Готовый комплект документов, поверенные СИ, доступ к «Строй-Док Онлайн» и соблюдение требований к штату','Только договор аренды, прайс и рекламная презентация','Только один директор и произвольный перечень работ'],answer:0,order:['Уточнить заявляемые виды работ и объект','Сверить штат, СИ и доступ к «Строй-Док Онлайн»','Подготовить комплект документов','Согласовать с клиентом недостающее и следующий шаг']},
+      working:{prompt:'Какие пункты нужно проверить до того, как говорить клиенту о готовности к получению СПК?',options:['Какие строительно-монтажные работы заявляет клиент','Поверены ли средства измерения','Есть ли доступ к «Строй-Док Онлайн»','Есть ли специалисты по заявленным направлениям','Любимый формат коммерческого предложения директора','Можно ли не собирать документы до подачи'],answers:[0,1,2,3]}
+    },
+    attestation:{
+      check:{q:'Что эксперт обязан сопоставить при первичной проверке аттестации организации по паспорту продукта?',options:['Только название организации и предполагаемый срок','Заявленные направления, должности, аттестаты, образование и стаж специалистов','Только число работников без их документов'],answer:1,order:['Зафиксировать заявляемые направления работ','Собрать дипломы, трудовые документы и аттестаты специалистов','Сопоставить должности, область аттестации, образование и стаж','Передать подтверждённый маршрут и список недостающего']},
+      working:{prompt:'Выберите документы и сведения, без которых нельзя корректно проверить аттестацию по заявленным направлениям.',options:['Квалификационные аттестаты специалистов','Дипломы и документы о стаже','Должности и основное место работы специалистов','Перечень заявляемых работ','Только логотип компании','Личный номер менеджера'],answers:[0,1,2,3]}
+    },
+    'iso-suot':{
+      check:{q:'Какое техническое задание передаёт эксперт оформителю при подготовке ISO 45001 согласно паспорту?',options:['Только название компании и желаемый цвет сертификата','Область ISO, численность штата и сведения, у кого есть удостоверения по охране труда','Только сведения о предыдущем тендере'],answer:1,order:['Уточнить область ISO и фактический штат','Собрать сведения об удостоверениях по охране труда и исходные документы','Передать оформителю техническое задание','Направить комплект на предварительную проверку и подготовить выезд']},
+      working:{prompt:'Что из этого нужно запросить у клиента для подготовки ISO 45001 по рабочему паспорту?',options:['Список фактически работающих сотрудников с ФИО, должностями и датами приёма','Перечень поставщиков с продукцией','Перечень объектов','Только карточку компании без исходных данных','Рекламные макеты клиента','Личные пароли сотрудников'],answers:[0,1,2]}
+    }
+  };
   function cleanSourceLine(value) {
     return String(value||'').replace(/\u00a0/g,' ').replace(/[ \t]{2,}/g,' ').trim()
       .replace(/\bфин\.?\s*модель\b/gi,'Финансовая модель')
@@ -847,6 +865,8 @@
     return {concept:specific.concept||'',people:specific.people||[],tools:specific.tools||[],staticReferences:Boolean(specific.staticReferences),flow:roleSpecific.flow||[],tips:roleSpecific.tips||[]};
   };
   function practiceFor(course){
+    const productPractice=PRODUCT_PRACTICE[course?.id];
+    if(productPractice)return productPractice;
     const fallbackCheck=course?.check||DEFAULT_CUSTOM_CHECK;
     const fallbackWorking=WORK_CASES[course?.practice||course?.id]||{prompt:'Какие действия безопасны по этой теме?',options:['Понять задачу и проверить входные данные','Зафиксировать следующий шаг','Обещать результат без проверки'],answers:[0,1]};
     const audience=activeAudience();
@@ -909,19 +929,47 @@
     if(!raw)return '';
     return data?.format==='html'?safeRichHtml(raw):markdown(raw);
   }
+  const sourceBlockKind=title=>{
+    const value=String(title||'').toLocaleLowerCase('ru');
+    if(/специал|штат|кадр|персонал|руководител|прораб|мастер|инженер|образован|стаж/.test(value))return 'people';
+    if(/средств.{0,18}измер|\bси\b|инструмент|оборудован|поверк|калибров|метролог/.test(value))return 'tools';
+    if(/ход работы|этап|порядок|алгоритм|подач|оформлен|выезд|проверка документ|доработк/.test(value))return 'workflow';
+    if(/важно|ошибк|внимани|нельзя|подсказ|риск|срок|периодич|подтвержден/.test(value))return 'important';
+    if(/ссылк|реестр|орган|контакт|образец|заявк|документ/.test(value))return 'reference';
+    return 'overview';
+  };
+  const sourceBlockLabel=kind=>({overview:'Суть и условия',people:'Специалисты',tools:'Инструменты и СИ',workflow:'Порядок работы',important:'Важно',reference:'Документы и справки'}[kind]||'Материал');
   function sourceConceptDocument(data,path){
     const full=readableDocument(data,path,isReferenceMaterial(path));
     const root=document.createElement('div');root.innerHTML=full;
-    const heading=[...root.querySelectorAll('h2,h3,h4')].find(node=>/^(что такое|общая информация|зачем|о продукте|назначение|суть|кому подходит)/i.test((node.textContent||'').trim()));
-    if(!heading)return full;
-    const rank=Number(heading.tagName.slice(1)),excerpt=document.createElement('div');
-    for(let node=heading;node;node=node.nextElementSibling){
-      const nodeRank=/^H[2-4]$/.test(node.tagName)?Number(node.tagName.slice(1)):0;
-      if(node!==heading&&nodeRank&&nodeRank<=rank)break;
-      excerpt.appendChild(node.cloneNode(true));
+    let nodes=[...root.children].filter(node=>String(node.textContent||'').trim());
+    // Markdown is rendered as a series of wrappers, while spreadsheet
+    // documents can arrive in one wrapper from the education renderer.  Work
+    // one level deeper in the latter case so the original headings still
+    // become the visual structure of the tile.
+    if(nodes.length===1&&['DIV','SECTION','ARTICLE'].includes(nodes[0].tagName)){
+      const nested=[...nodes[0].children].filter(node=>String(node.textContent||'').trim());
+      if(nested.length)nodes=nested;
     }
-    if(!excerpt.childNodes.length)return full;
-    return `<div class="workspace-source-excerpt">${excerpt.innerHTML}</div><details class="workspace-full-source"><summary>Открыть полный первоисточник</summary><div class="course-document">${full}</div></details>`;
+    if(!nodes.length)return full;
+    const isHeading=node=>/^H[1-4]$/.test(node.tagName);
+    const titleNode=nodes.find(node=>isHeading(node));
+    const documentTitle=titleNode?`<h2 class="source-document-title">${titleNode.innerHTML}</h2>`:'';
+    const contentNodes=titleNode?nodes.filter(node=>node!==titleNode):nodes;
+    const blocks=[];let current=null;
+    const push=()=>{if(current&&current.nodes.length)blocks.push(current);};
+    contentNodes.forEach(node=>{
+      if(isHeading(node)){
+        push();
+        current={title:String(node.textContent||'').trim(),kind:sourceBlockKind(node.textContent),nodes:[]};
+        return;
+      }
+      if(!current)current={title:'Материал',kind:'overview',nodes:[]};
+      current.nodes.push(node.cloneNode(true));
+    });
+    push();
+    if(!blocks.length)return full;
+    return `${documentTitle}<div class="source-blocks">${blocks.map((block,index)=>`<section class="source-block source-block--${block.kind}" id="source-block-${index}"><header class="source-block-heading"><span class="source-block-label">${sourceBlockLabel(block.kind)}</span><h3>${esc(block.title)}</h3></header><div class="source-block-body">${block.nodes.map(node=>node.outerHTML).join('')}</div></section>`).join('')}</div>`;
   }
   async function loadManagerDetailedWorkflow(){
     const course=current(),target=document.getElementById('manager-detailed-flow');
