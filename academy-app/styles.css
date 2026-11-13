@@ -173,6 +173,21 @@
 .role-reader-content .workspace-block{background:#fff}
 .role-reader-content .workspace-block:nth-child(even){background:#fbfdfc}
 .role-reader-content .workspace-block>p,.role-reader-content .course-document p,.role-reader-content .course-document li{max-width:88ch}
+.role-reader-content .workspace-block{box-sizing:border-box;min-width:0;padding:clamp(24px,3vw,38px);overflow:visible}
+.role-reader-content .workspace-primary-source{min-width:0}
+.role-reader-content .workspace-source-label{margin:0 0 18px!important;color:#087b72!important;font:900 11px/1.4 Nunito,system-ui,sans-serif!important;letter-spacing:.11em;text-transform:uppercase;overflow-wrap:anywhere}
+.role-reader-content .workspace-primary-source .course-document{box-sizing:border-box;min-width:0;max-width:none;margin:0;padding:0;border:0;background:transparent;overflow-x:auto;overflow-wrap:anywhere}
+.role-reader-content .workspace-primary-source .course-document>*{max-width:none}
+.role-reader-content .workspace-primary-source .course-document h1,.role-reader-content .workspace-primary-source .course-document h2{font-size:clamp(27px,3vw,42px);line-height:1.14;overflow-wrap:anywhere}
+.role-reader-content .workspace-primary-source .course-document h3{font-size:clamp(21px,2.35vw,30px);line-height:1.2;overflow-wrap:anywhere}
+.role-reader-content .workspace-primary-source .course-document table{width:100%;min-width:620px}
+.role-reader-content .workspace-source-excerpt{min-width:0}
+.role-reader-content .workspace-full-source{margin-top:22px;border-top:1px solid #dceae5}
+.role-reader-content .workspace-full-source summary{cursor:pointer;padding:15px 0;color:#087b72;font:850 14px/1.4 Nunito,system-ui,sans-serif}
+.role-reader-content .workspace-full-source[open] summary{margin-bottom:16px}
+.role-reader-content .workspace-full-source>.course-document{max-width:none;overflow-x:auto}
+.role-reader-content .workspace-reference-list{display:grid;gap:10px;min-width:0}
+.role-reader-content .workspace-reference-item{min-width:0;background:#fff}
 .workspace-empty{margin:0;color:#71858b;font-size:14px;line-height:1.55}
 #leader-operational-panel{display:block;min-width:0;overflow-wrap:anywhere}
 #leader-operational-panel .leader-subhead{margin:26px 0 12px}

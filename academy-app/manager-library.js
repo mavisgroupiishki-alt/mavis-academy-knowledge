@@ -883,32 +883,50 @@
         return content?{path,content}:null;
       }));
       if(!isCurrent())return;
-      const workflow=results.filter(Boolean).map(item=>`<section class="workflow-source"><h3>${esc(sourceTitle(item.path))}</h3><div class="course-document">${item.content}</div></section>`).join('');
+      // Один подробный маршрут лучше набора повторяющихся фрагментов из разных
+      // паспортов. Остальные паспорта остаются в первоисточниках плитки.
+      const item=results.find(Boolean);
+      const workflow=item?`<section class="workflow-source"><h3>${esc(sourceTitle(item.path))}</h3><div class="course-document">${item.content}</div></section>`:'';
       target.innerHTML=workflow?`<div class="workflow-document">${workflow}</div>`:'<p>Для этой темы паспорт не содержит отдельного заполненного листа «Ход работы эксперта».</p>';
     }catch(_){if(isCurrent())target.innerHTML='<div class="course-error"><b>Не удалось загрузить подробный ход работы.</b><span>Попробуйте открыть плитку ещё раз.</span></div>';}
   }
-  const managerWorkflowSourcesFor=course=>sourceIndexesForAudience(course,'manager').map(index=>course.sources[index]).filter(path=>path&&!isReferenceMaterial(path));
+  const managerWorkflowSourceFor=course=>{
+    const primary=selectedSourceFor(course)?.path||'';
+    const candidates=sourceIndexesForAudience(course,'manager').map(index=>course.sources[index]).filter(path=>path&&!isReferenceMaterial(path)&&path!==primary);
+    return candidates.find(isManagerSource)||candidates[0]||'';
+  };
   function managerWorkflowFromSource(data){
     const raw=String(data?.content||'');
     if(!raw)return '';
     return data?.format==='html'?safeRichHtml(raw):markdown(raw);
+  }
+  function sourceConceptDocument(data,path){
+    const full=readableDocument(data,path,isReferenceMaterial(path));
+    const root=document.createElement('div');root.innerHTML=full;
+    const heading=[...root.querySelectorAll('h2,h3,h4')].find(node=>/^(что такое|общая информация|зачем|о продукте|назначение|суть|кому подходит)/i.test((node.textContent||'').trim()));
+    if(!heading)return full;
+    const rank=Number(heading.tagName.slice(1)),excerpt=document.createElement('div');
+    for(let node=heading;node;node=node.nextElementSibling){
+      const nodeRank=/^H[2-4]$/.test(node.tagName)?Number(node.tagName.slice(1)):0;
+      if(node!==heading&&nodeRank&&nodeRank<=rank)break;
+      excerpt.appendChild(node.cloneNode(true));
+    }
+    if(!excerpt.childNodes.length)return full;
+    return `<div class="workspace-source-excerpt">${excerpt.innerHTML}</div><details class="workspace-full-source"><summary>Открыть полный первоисточник</summary><div class="course-document">${full}</div></details>`;
   }
   async function loadManagerDetailedWorkflow(){
     const course=current(),target=document.getElementById('manager-detailed-flow');
     if(!target||activeAudience()!=='manager'||!course||!access)return;
     const requestId=(state.managerWorkflowRequestId||0)+1;state.managerWorkflowRequestId=requestId;
     const isCurrent=()=>state.managerWorkflowRequestId===requestId&&state.page==='course'&&state.course===course.id&&activeAudience()==='manager';
-    const paths=managerWorkflowSourcesFor(course);
-    if(!paths.length){target.innerHTML='<p>Для этой темы ещё нет отдельного рабочего материала менеджера. Используйте полный подключённый материал ниже.</p>';return;}
+    const path=managerWorkflowSourceFor(course);
+    if(!path){target.innerHTML='<p>Для этой темы нет отдельного рабочего материала менеджера.</p>';return;}
     try{
-      const results=await Promise.all(paths.map(async path=>{
-        const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()});
-        if(!response.ok)return null;
-        const data=await response.json(),content=managerWorkflowFromSource(data);
-        return content?{path,content}:null;
-      }));
+      const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()});
+      const data=response.ok?await response.json():null;
+      const content=managerWorkflowFromSource(data);
       if(!isCurrent())return;
-      const workflow=results.filter(Boolean).map(item=>`<section class="workflow-source"><h3>${esc(sourceTitle(item.path))}</h3><div class="course-document">${item.content}</div></section>`).join('');
+      const workflow=content?`<section class="workflow-source"><h3>${esc(sourceTitle(path))}</h3><div class="course-document">${content}</div></section>`:'';
       target.innerHTML=workflow?`<div class="workflow-document">${workflow}</div>`:'<p>Не удалось найти заполненные рабочие материалы менеджера по этой теме.</p>';
     }catch(_){if(isCurrent())target.innerHTML='<div class="course-error"><b>Не удалось загрузить подробный ход работы.</b><span>Попробуйте открыть плитку ещё раз.</span></div>';}
   }
@@ -1025,21 +1043,27 @@
     const sourceButtons=indexes.map(index=>`<button type="button" class="${index===selected.index?'active':''}" aria-current="${index===selected.index?'page':'false'}" onclick="academySource(${index})"><span>${String(index+1).padStart(2,'0')}</span><b>${esc(sourceTitle(course.sources[index]))}</b></button>`).join('');
     const list=items=>`<ul>${items.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`;
     const hasProductReferences=passportSourcesFor(course).length>0;
-    const documentPane=path?(inlineEditing?inlineMaterialEditor(course,path):`<section class="workspace-source" id="workspace-source"><div><h2>${esc(sourceTitle(path))}</h2><p>Полный материал для сверки деталей по текущему рабочему виду.</p></div><div id="course-document" class="course-document"><div class="course-loading"><b>Открываю материал…</b><span>Текст, таблицы и чек-листы загрузятся здесь.</span></div></div></section>`):'';
+    // The source document is the concept block itself.  Previously this
+    // screen first showed an abbreviated text written in the UI and only
+    // afterwards the actual document.  That made the route look generic and
+    // could contradict the source.  Staff now reads the primary source first.
+    const sourcePane=path?(inlineEditing?inlineMaterialEditor(course,path):`<div class="workspace-primary-source" id="workspace-source"><p class="workspace-source-label">Первоисточник: ${esc(sourceTitle(path))}</p><div id="course-document" class="course-document"><div class="course-loading"><b>Открываю первоисточник…</b><span>Загружаю текст, таблицы и чек-листы.</span></div></div></div>`):'';
     const editAction=canEditBase()?`<button class="reader-edit" onclick="academyEditOpenedMaterial()" ${path?'':'disabled'}>✎ Редактировать текст</button><button class="reader-edit" onclick="academyEditTile('${course.id}')">⊕ Материалы плитки</button>`:'';
     const authored=course.content?`<section class="workspace-source custom-tile-document">${safeRichHtml(course.content)}</section>`:'';
     const detailedManagerFlow=audience==='manager'?`<section class="workspace-source expert-passport-workflow" id="workspace-flow"><div><h2>Ход работы</h2><p>Полный рабочий регламент менеджера: последовательность действий, скрипты, таблицы и контрольные точки.</p></div><div id="manager-detailed-flow" class="expert-passport-flow"><div class="course-loading"><b>Загружаю ход работы…</b><span>Откроется единый подробный материал.</span></div></div></section>`:'';
     const detailedExpertFlow=audience==='expert'?`<section class="workspace-source expert-passport-workflow" id="workspace-flow"><div><h2>Ход работы</h2><p>Полный рабочий маршрут из паспортов продукта: проверка, подготовка, контроль и результат.</p></div><div id="expert-passport-flow" class="expert-passport-flow"><div class="course-loading"><b>Загружаю ход работы…</b><span>Откроется единый подробный материал.</span></div></div></section>`:'';
     const noItems='<p class="workspace-empty">Данные по этому разделу в материалах продукта не указаны.</p>';
     const section=(id,title,body)=>body?`<section class="workspace-block" id="${id}"><h2>${title}</h2>${body}</section>`:'';
-    const otherItems=[...workspace.tips.map(item=>`<li>${esc(item)}</li>`)].join('');
-    const otherContent=`${otherItems?`<ul>${otherItems}</ul>`:''}${gpnContacts(course)}${tileAttachmentsReader(course)}${authored}`;
+    // “Другое” only contains a real attachment or text explicitly added to
+    // this tile.  Do not fill it with generic sales/expert advice.
+    const otherContent=`${tileAttachmentsReader(course)}${authored}`;
     const productPeople=hasProductReferences?'<div id="workspace-product-people"><div class="course-loading"><b>Загружаю специалистов из паспортов продукта…</b></div></div>':'';
     const productTools=hasProductReferences?'<div id="workspace-product-tools"><div class="course-loading"><b>Загружаю инструменты и СИ из паспортов продукта…</b></div></div>':'';
-    const peopleContent=productPeople||(workspace.people.length?list(workspace.people):noItems);
-    const toolsContent=productTools||(workspace.tools.length?list(workspace.tools):noItems);
-    const outline=`${workspace.concept?'<a href="#workspace-concept">Понятие</a>':''}${hasProductReferences||workspace.people.length?'<a href="#workspace-people">Специалисты</a>':''}${hasProductReferences||workspace.tools.length?'<a href="#workspace-tools">Инструменты и СИ</a>':''}${audience==='manager'||audience==='expert'?'<a href="#workspace-flow">Ход работы</a>':''}${otherContent?'<a href="#workspace-other">Другое</a>':''}${indexes.length?`<details class="workspace-source-list"><summary>Источники по теме · ${indexes.length}</summary>${sourceButtons}</details>`:''}`;
-    return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>${esc(course.eyebrow||'РАБОЧАЯ ТЕМА')}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1></div><div class="reader-actions">${editAction}<button class="reader-presentation" onclick="academyPresentation('${course.id}')">Открыть презентацию</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику</button><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header>${staffModeControl()}<section class="reader-layout role-reader-layout"><aside class="reader-outline"><b>Содержание плитки</b>${outline}<div class="reader-practice"><span>После чтения</span><b>Закрепите логику на кейсе по этой роли.</b><button type="button" onclick="academyTest('${course.id}')">Открыть практику →</button></div></aside><article class="reader-content role-reader-content">${section('workspace-concept','Понятие',workspace.concept?`<p>${esc(workspace.concept)}</p>`:noItems)}${section('workspace-people','Специалисты',peopleContent)}${section('workspace-tools','Инструменты и СИ',toolsContent)}${detailedManagerFlow}${detailedExpertFlow}${section('workspace-other','Другое',otherContent)}${documentPane}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Плитка изучена':'✓ Я изучил(а) эту плитку'}</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику →</button></div></article></section>`);
+    const peopleContent=productPeople||noItems;
+    const toolsContent=productTools||noItems;
+    const conceptContent=sourcePane||noItems;
+    const outline=`<a href="#workspace-concept">Понятие</a><a href="#workspace-people">Специалисты</a><a href="#workspace-tools">Инструменты и СИ</a>${audience==='manager'||audience==='expert'?'<a href="#workspace-flow">Ход работы</a>':''}${otherContent?'<a href="#workspace-other">Другое</a>':''}${indexes.length?`<details class="workspace-source-list"><summary>Источники по теме · ${indexes.length}</summary>${sourceButtons}</details>`:''}`;
+    return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>${esc(course.eyebrow||'РАБОЧАЯ ТЕМА')}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1></div><div class="reader-actions">${editAction}<button class="reader-presentation" onclick="academyPresentation('${course.id}')">Открыть презентацию</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику</button><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header>${staffModeControl()}<section class="reader-layout role-reader-layout"><aside class="reader-outline"><b>Содержание плитки</b>${outline}<div class="reader-practice"><span>После чтения</span><b>Закрепите логику на кейсе по этой роли.</b><button type="button" onclick="academyTest('${course.id}')">Открыть практику →</button></div></aside><article class="reader-content role-reader-content">${section('workspace-concept','Понятие',conceptContent)}${section('workspace-people','Специалисты',peopleContent)}${section('workspace-tools','Инструменты и СИ',toolsContent)}${detailedManagerFlow}${detailedExpertFlow}${section('workspace-other','Другое',otherContent)}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Плитка изучена':'✓ Я изучил(а) эту плитку'}</button><button class="reader-test" onclick="academyTest('${course.id}')">Открыть практику →</button></div></article></section>`);
   }
   function tileAttachmentsEditor(tile,custom){
     const items=tileAttachments(tile), attachmentRows=items.length?`<div class="library-attachment-chips">${items.map((item,index)=>`<span><i>${attachmentIcon(item.kind)}</i>${esc(ATTACHMENT_TYPES[item.kind])}: ${esc(item.title)}<button type="button" aria-label="Убрать ${esc(item.title)}" onclick="academyRemoveLibraryAttachment('${esc(tile.id)}',${custom},${index})">×</button></span>`).join('')}</div>`:'<p class="library-no-sources">Внешних материалов пока нет.</p>';
@@ -1067,7 +1091,7 @@
     const target=document.getElementById('course-document'); if (!target) return;
     if(course.content&&!(course.sources||[]).length){target.innerHTML=safeRichHtml(course.content);return;}
     const isCurrent=()=>requestId===state.documentRequestId&&state.page==='course'&&state.course===course.id&&state.tab===index;
-    try { const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()}); if(response.status===401){ state.login=true; access=null; sessionStorage.removeItem(accessKey); return render(); } if(!response.ok) throw Error(`Код ${response.status}`); const data=await response.json(); if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) { currentTarget.innerHTML=readableDocument(data,path,state.referenceView); if(canEditBase()&&isTraineeWorkspace()&&state.traineeTileEditing){currentTarget.contentEditable='true';currentTarget.classList.add('trainee-live-source-edit');currentTarget.addEventListener('input',()=>window.academyLiveTraineeDocument(currentTarget.innerHTML));} } } }
+    try { const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()}); if(response.status===401){ state.login=true; access=null; sessionStorage.removeItem(accessKey); return render(); } if(!response.ok) throw Error(`Код ${response.status}`); const data=await response.json(); if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) { currentTarget.innerHTML=isStaff(access?.role||state.role)?sourceConceptDocument(data,path):readableDocument(data,path,state.referenceView); if(canEditBase()&&isTraineeWorkspace()&&state.traineeTileEditing){currentTarget.contentEditable='true';currentTarget.classList.add('trainee-live-source-edit');currentTarget.addEventListener('input',()=>window.academyLiveTraineeDocument(currentTarget.innerHTML));} } } }
     catch (error) { if(isCurrent()) { const currentTarget=document.getElementById('course-document'), fallback=String(course.fallbackContent||'').trim(), fallbackHtml=fallback?(fallback.includes('<')?safeRichHtml(fallback):markdown(fallback)):''; if(currentTarget) currentTarget.innerHTML=`<div class="course-error"><b>Материал временно недоступен.</b><span>Раздел «${esc(sourceTitle(path))}»: ${esc(error.message||'неизвестная ошибка')}. Попробуйте загрузить ещё раз.</span><button onclick="academyReloadCourse()">Загрузить снова</button></div>${fallbackHtml?`<section class="course-document course-fallback"><h3>Краткий резервный материал</h3>${fallbackHtml}</section>`:''}`; } }
   }
   async function loadPresentationDocument() {

@@ -2,6 +2,7 @@ import sys
 import io
 import json
 import re
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -236,6 +237,54 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("workflow-document", source)
         self.assertNotIn("const roleFocus=", source)
         self.assertIn("window.academyAudience=", source)
+
+    def test_staff_reader_shows_primary_source_instead_of_static_summary(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        reader = source.rsplit("  function reader(){", 1)[-1].split("  function tileAttachmentsEditor", 1)[0]
+
+        self.assertIn("const conceptContent=sourcePane||noItems", reader)
+        self.assertIn("const peopleContent=productPeople||noItems", reader)
+        self.assertIn("const toolsContent=productTools||noItems", reader)
+        self.assertNotIn("workspace.concept?`<p>", reader)
+        self.assertNotIn("workspace.people.length?list", reader)
+        self.assertNotIn("workspace.tools.length?list", reader)
+        self.assertNotIn("workspace.tips.map", reader)
+
+    def test_every_staff_tile_source_file_exists_and_both_roles_have_sources(self):
+        project = server.ROOT.parent
+        script = r'''
+const fs=require('fs'), vm=require('vm');
+const text=fs.readFileSync('academy-app/manager-library.js','utf8');
+const end=text.indexOf('  const FULL_LIBRARY_EXTRA_SOURCES');
+const code=text.slice(0,end)+'\n globalThis.__courses=COURSES;\n})();';
+const context={document:{getElementById:()=>null,createElement:()=>({}),head:{appendChild(){}}},window:{},globalThis:{}};
+context.globalThis=context;vm.createContext(context);vm.runInContext(code,context);
+const ignored=new Set(['company','full-library','contacts','cases']);
+const tiles=context.__courses.filter(course=>!ignored.has(course.id));
+const missing=[];
+const coverage=[];
+for(const tile of tiles){
+  const sources=tile.sources||[];
+  const manager=sources.filter(path=>!path.startsWith('04 EXPERT/'));
+  const expert=sources.filter(path=>!path.startsWith('03 SALES/'));
+  for(const path of sources) if(!fs.existsSync(path)) missing.push(`${tile.id}: ${path}`);
+  coverage.push({id:tile.id,roles:tile.roles||['manager','expert','leader'],manager:manager.length,expert:expert.length});
+}
+console.log(JSON.stringify({missing,coverage}));
+'''
+        result = subprocess.run(
+            ["node", "-e", script], cwd=project, text=True,
+            capture_output=True, check=True,
+        )
+        audit = json.loads(result.stdout)
+
+        self.assertEqual(audit["missing"], [])
+        self.assertTrue(audit["coverage"])
+        for tile in audit["coverage"]:
+            if "manager" in tile["roles"]:
+                self.assertGreater(tile["manager"], 0, tile["id"])
+            if "expert" in tile["roles"]:
+                self.assertGreater(tile["expert"], 0, tile["id"])
 
     def test_trainee_spk_is_a_standalone_curriculum_lesson(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
@@ -491,11 +540,12 @@ class KnowledgeAssistantRetrievalTests(unittest.TestCase):
         self.assertEqual(sources[0]["path"], passport_path)
         self.assertIn("направить её на электронную почту органа", sources[0]["text"])
 
-    def test_manager_reader_loads_full_workflow_materials(self):
+    def test_manager_reader_loads_one_detailed_workflow_material(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("function loadManagerDetailedWorkflow()", source)
-        self.assertIn("managerWorkflowSourcesFor(course)", source)
+        self.assertIn("managerWorkflowSourceFor(course)", source)
+        self.assertIn("const path=managerWorkflowSourceFor(course);", source)
         self.assertIn('id="manager-detailed-flow"', source)
 
     def test_each_product_passport_has_a_detailed_expert_flow(self):
