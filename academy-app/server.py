@@ -28,7 +28,7 @@ SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)(парол[ья]?|api[_ -]?key|token|secret|credential)\s*[:=]\s*\S+"),
 )
 QUERY_STOP_WORDS = {"как", "что", "это", "для", "или", "про", "после", "перед", "если", "нужно", "можно", "менеджер", "клиент", "клиента"}
-QUERY_ABBREVIATIONS = {"си", "спк", "стк", "итр", "ттк", "мвд", "мчс", "исо", "суот", "бисп"}
+QUERY_ABBREVIATIONS = {"си", "спк", "стк", "итр", "ттк", "мвд", "мчс", "исо", "суот", "бисп", "кп"}
 QUERY_ALIASES = {
     "си": ("си", "средство измерения", "средства измерения", "средств измерения", "измерительный инструмент", "инструмент", "поверк", "калибровк"),
     "инструмент": ("инструмент", "средство измерения", "средства измерения", "средств измерения", "оборудование", "прибор"),
@@ -36,6 +36,8 @@ QUERY_ALIASES = {
     "заявлен": ("заявлен", "заявк", "подач", "подать", "направить заявку", "электронную почту органа"),
     "подать": ("подать", "подач", "направить", "отправить", "заявк"),
     "заявк": ("заявк", "заявлен", "подать", "подач"),
+    "коммерческ": ("коммерческ", "кп"),
+    "предложен": ("предложен", "кп"),
 }
 ACCESS_ROLES = {
     "leader": "ACADEMY_LEADER_PASS",
@@ -305,8 +307,8 @@ def internal_knowledge_fallback(sources):
 
 
 def search_knowledge_paths(query, allowed_paths=None):
-    terms = normalize_terms(query)
-    if not terms:
+    groups = knowledge_query_groups(query)
+    if not groups:
         return []
     matches = []
     searchable_paths = sorted(set(allowed_paths if allowed_paths is not None else knowledge_paths()))
@@ -319,15 +321,15 @@ def search_knowledge_paths(query, allowed_paths=None):
             haystack = (path + "\n" + cached).lower()
         except (URLError, HTTPError, TimeoutError, ValueError, UnicodeDecodeError):
             continue
-        if all(term in haystack for term in terms):
+        if all(any(alias in haystack for alias in group) for group in groups):
             matches.append(path)
     return matches[:120]
 
 
 def search_knowledge_results(query, allowed_paths=None):
     """Return short context snippets, not only a filename, for Academy search."""
-    terms = normalize_terms(query)
-    if not terms:
+    groups = knowledge_query_groups(query)
+    if not groups:
         return []
     results = []
     searchable_paths = sorted(set(allowed_paths if allowed_paths is not None else knowledge_paths()))
@@ -340,9 +342,15 @@ def search_knowledge_results(query, allowed_paths=None):
             lower = cached.lower()
         except (URLError, HTTPError, TimeoutError, ValueError, UnicodeDecodeError):
             continue
-        if not all(term in (path + "\n" + cached).lower() for term in terms):
+        haystack = (path + "\n" + cached).lower()
+        if not all(any(alias in haystack for alias in group) for group in groups):
             continue
-        positions = [lower.find(term) for term in terms if lower.find(term) >= 0]
+        positions = [
+            lower.find(alias)
+            for group in groups
+            for alias in group
+            if lower.find(alias) >= 0
+        ]
         start = max(0, min(positions or [0]) - 95)
         excerpt = re.sub(r"\s+", " ", cached[start:start + 340]).strip()
         if start:
