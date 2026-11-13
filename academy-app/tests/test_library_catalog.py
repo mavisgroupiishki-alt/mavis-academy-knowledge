@@ -199,6 +199,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Государственное предприятие «УКС Крупского района»", source)
         self.assertIn("Кейс № 8: Аттестация СТ и СПК", source)
         self.assertIn("Кейс № 10: Первое касание и «лишние» вопросы", source)
+        self.assertIn("Кейс № 4: Сгоревшая папка — физический форс-мажор", source)
+        self.assertIn("Кейсы — регламенты.md", source)
         self.assertNotIn("ООО «РОГА И КОПЫТА»", source)
         self.assertIn("function casesReader(course)", source)
         case_reader = source.split("function casesReader(course)", 1)[1].split("function reader(){", 1)[0]
