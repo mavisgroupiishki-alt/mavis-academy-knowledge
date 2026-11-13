@@ -331,10 +331,11 @@ console.log(JSON.stringify({missing,coverage}));
 
     def test_trainee_keeps_the_four_day_curriculum_instead_of_staff_reference_tabs(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        program = (server.ROOT / "generated" / "trainee-program.js").read_text(encoding="utf-8")
 
-        self.assertIn("const TRAINEE_DAYS = [", source)
-        self.assertIn("const TRAINEE_PRODUCT_PASSPORTS=", source)
-        self.assertIn("sources:passport?[passport]:[]", source)
+        self.assertIn("const TRAINEE_DAYS = window.MAVIS_TRAINEE_PROGRAM?.days || [];", source)
+        self.assertIn("const TRAINEE_SHEET_COURSES = window.MAVIS_TRAINEE_PROGRAM?.courses || [];", source)
+        self.assertIn('"title":"День 4 · звонки и финальный тест"', program)
         self.assertIn("const courseLessonCount=course=>", source)
 
     def test_day_one_product_tiles_use_full_local_passports(self):
@@ -381,10 +382,12 @@ console.log(JSON.stringify({missing,coverage}));
 
     def test_trainee_default_contains_only_sheet_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        program = (server.ROOT / "generated" / "trainee-program.js").read_text(encoding="utf-8")
 
         self.assertIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);", source)
-        self.assertIn("courseIds:['tr-d1-video','tr-d1-company','tr-d1-spk','tr-d1-attestation-st'", source)
-        self.assertNotIn("tr-d1-sales-structure","".join(source.split("const TRAINEE_DAYS = [", 1)[1].split("];", 1)[0]))
+        self.assertEqual(program.count('"importedSheet":true'), 18)
+        self.assertIn('"courseIds":["tr-sheet-d1-01","tr-sheet-d1-02","tr-sheet-d1-03","tr-sheet-d1-04","tr-sheet-d1-05","tr-sheet-d1-06"]', program)
+        self.assertNotIn("tr-d1-sales-structure", program)
         self.assertNotIn("let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES, ...TRAINEE_FOUNDATION_COURSES", source)
 
     def test_trainee_course_reader_is_defined(self):
@@ -412,46 +415,33 @@ console.log(JSON.stringify({missing,coverage}));
 
     def test_trainee_lessons_embed_materials_and_keep_submitted_work(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        program = (server.ROOT / "generated" / "trainee-program.js").read_text(encoding="utf-8")
 
-        self.assertIn("const TRAINEE_MATERIALS=", source)
-        self.assertNotIn("const TRAINEE_ATTACHMENTS=", source)
-        self.assertIn("attachments:[]", source)
-        self.assertIn("Вся учебная информация находится в этой плитке", source)
-        self.assertIn("Обязательное задание на сегодня", source)
-        self.assertIn("Итоговая работа: диагностика и следующий шаг", source)
-        self.assertIn("academySubmitTraineeAssignment", source)
-        self.assertIn("courseIds:['tr-d2-repeat-products','tr-d2-script-structure','tr-d2-price-templates','tr-d2-call-analysis','tr-d2-own-script']", source)
-        self.assertIn("courseIds:['tr-d3-repeat-products','tr-d3-general-sales-script','tr-d3-mvd','tr-d3-mchs','tr-d3-bitrix-regulation','tr-d3-tables','tr-d3-bitrix-review']", source)
-        self.assertIn("courseIds:['tr-d4-repeat-day1','tr-d4-ten-calls','tr-d4-call-log','tr-d4-first-kp','tr-d4-exam']", source)
-        day_three = source.split("const TRAINEE_DAYS = [", 1)[1].split("  ];", 1)[0]
-        self.assertNotIn("tr-d3-script-practice", day_three)
+        self.assertIn("if(course.importedSheet)return {...course,sources:[],attachments:[],sourceCourse:'',fallbackContent:''};", source)
+        self.assertIn("Проверьте понимание темы", source)
+        self.assertIn('"title":"Допродажи"', program)
+        self.assertIn('"title":"Лицензия МВД"', program)
+        self.assertNotIn("tr-d3-script-practice", program)
         final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
         self.assertEqual(final_exam.count("{q:'"), 20)
 
     def test_trainee_day_one_keeps_video_general_information_and_seven_products(self):
+        program = (server.ROOT / "generated" / "trainee-program.js").read_text(encoding="utf-8")
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
-        day_one = source.split("const TRAINEE_DAYS = [", 1)[1].split("},", 1)[0]
-        for course_id in (
-            "tr-d1-video", "tr-d1-company", "tr-d1-spk", "tr-d1-attestation-st",
-            "tr-d1-attestation-gs", "tr-d1-iso9001",
-            "tr-d1-iso9001-periodic", "tr-d1-suot45001",
-            "tr-d1-suot45001-periodic",
-        ):
-            self.assertIn(course_id, day_one)
-        self.assertIn("TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.5'", source)
-        self.assertIn("traineeVideoTile()", source)
-        self.assertIn("'Общая информация'", source)
-        self.assertIn("'О компании.','Чем занимается компания.','Кто клиенты компании.','Структура отдела продаж.'", source)
-        self.assertIn("'03 SALES/Общая информация.md'", source)
-        self.assertIn("'Повторение: продукты первого дня'", source)
-        self.assertIn("'Повторение: продукты и скрипт'", source)
+        for title in ("Видео-обучение", "Общая информация", "СПК", "Аттестат", "ISO 9001", "ISO 45001"):
+            self.assertIn(title, program)
+        self.assertIn('"tr-sheet-d1-01"', program)
+        self.assertIn('"tr-sheet-d1-06"', program)
+        self.assertIn("TRAINEE_PLAN_VERSION='trainee-sheets-2026-11-13.1'", source)
+        self.assertIn("trainee-video-source", program)
 
-    def test_day_one_video_opens_without_an_unreliable_inline_player(self):
-        styles = (server.ROOT / "trainee-flow.css").read_text(encoding="utf-8")
+    def test_day_one_video_is_embedded_in_a_large_source_tile(self):
+        styles = (server.ROOT / "styles.css").read_text(encoding="utf-8")
+        program = (server.ROOT / "generated" / "trainee-program.js").read_text(encoding="utf-8")
 
-        self.assertIn(".trainee-video-launch", styles)
-        self.assertIn("Открыть видео-обучение", (server.ROOT / "manager-library.js").read_text(encoding="utf-8"))
+        self.assertIn(".trainee-video-source iframe", styles)
+        self.assertIn('https://docs.google.com/videos/d/1i3c78SieIX4SOQVvViOQ1t5WSzKgY4UuCoqecyZ0fus/play', program)
 
     def test_saved_trainee_plan_allows_leader_to_hide_or_merge_tiles(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")

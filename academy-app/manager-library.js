@@ -23,7 +23,7 @@
       if(!allowed.has(node.tagName.toLowerCase())){node.replaceWith(...node.childNodes);return;}
       const href=node.getAttribute('href')||'', src=node.getAttribute('src')||'', alt=node.getAttribute('alt')||'', color=node.getAttribute('color')||'', style=node.getAttribute('style')||'', className=node.getAttribute('class')||'';
       [...node.attributes].forEach(attribute=>node.removeAttribute(attribute.name));
-      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption','case-library','case-library-note'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
+      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','trainee-sheet-source','trainee-video-source','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption','case-library','case-library-note'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
       if(node.tagName==='A'){if(/^https:\/\//i.test(href))node.setAttribute('href',href);else node.replaceWith(...node.childNodes);}
       if(node.tagName==='IMG'){const normalized=src.replace(/^\//,'');if(/^media\/[a-z0-9._-]+\.(?:png|jpe?g|webp)$/i.test(normalized)){node.setAttribute('src',`/${normalized}`);node.setAttribute('alt',alt.slice(0,180));node.setAttribute('loading','lazy');}else node.remove();}
       if(node.tagName==='IFRAME'){if(/^https:\/\/docs\.google\.com\/videos\/d\/[a-zA-Z0-9_-]+\/(?:play|embed)(?:\?[^\s]*)?$/i.test(src)){node.setAttribute('src',src);node.setAttribute('title',alt||'Видео-обучение');node.setAttribute('allow','autoplay; fullscreen');node.setAttribute('allowfullscreen','');}else node.remove();}
@@ -265,34 +265,10 @@
     const passport=TRAINEE_PRODUCT_PASSPORTS[sourceId];
     return {...source,id,eyebrow:'День 01 · материал стажировки',sources:passport?[passport]:[],attachments:[],sourceCourse:'',fallbackContent:'',assignment:{title:'Конспект по продукту',minLength:350,prompt:'Напишите ответ прямо в поле ниже. По полному паспорту продукта опишите: что это за документ; кому и когда он нужен; какие вводные нужно собрать; как проходит работа; какой конкретный следующий шаг вы согласуете с клиентом. Не используйте реальные данные клиентов.'}};
   };
-  const TRAINEE_SHEET_COURSES = [
-    traineeVideoTile(),
-    traineeGeneralInfoTile(),
-    traineeEmbeddedCourse('tr-spk','tr-d1-spk'),
-    traineeEmbeddedCourse('tr-att-st','tr-d1-attestation-st'),
-    traineeEmbeddedCourse('tr-att-gs','tr-d1-attestation-gs'),
-    traineeEmbeddedCourse('tr-iso-cert','tr-d1-iso9001'),
-    traineeEmbeddedCourse('tr-iso-periodic','tr-d1-iso9001-periodic'),
-    traineeEmbeddedCourse('tr-suot-cert','tr-d1-suot45001'),
-    traineeEmbeddedCourse('tr-suot-periodic','tr-d1-suot45001-periodic'),
-    traineeSheetTile('tr-d2-repeat-products','Повторение: продукты первого дня','День 02 · повторение','Повторите СПК, аттестации, ISO 9001, СУОТ и периодические оценки до практики продаж.',['По каждому продукту повторите: что это, кому нужно и зачем клиенту оформлять документ.','Составьте список вопросов, которые нужно задать до расчёта.'],'spk'),
-    traineeSheetTile('tr-d2-script-structure','Скрипт продаж MAVIS GROUP общий','День 02 · таблица стажировки','Разберите порядок первого разговора от открытия до договорённости.',['Приветствие и причина звонка.','Диагностика задачи и исходных данных.','Польза и подходящий маршрут.','Проверка понимания, КП и конкретный следующий контакт.']),
-    traineeSheetTile('tr-d2-price-templates','Прайс на услуги','День 02 · таблица стажировки','Изучите прайс и шаблоны, не подменяя ими диагностику.',['Найдите базовую строку по СПК и аттестации.','Проверьте, что входит в предложение и что требует проверки эксперта.','В поле ответа подготовьте структуру КП по учебному кейсу: услуга, что входит, что требует проверки и следующий шаг.'],'spk'),
-    traineeSheetTile('tr-d2-call-analysis','Разбор звонков: плюсы и ошибки','День 02 · задание','Прослушайте звонки и разберите конкретные сильные и слабые действия менеджера.',['Выпишите, что в звонках сделано правильно и неправильно.','Назовите сильные стороны хороших звонков.','Подготовьте вопросы: что непонятно, что можно улучшить и какие ошибки прозвучали.']),
-    traineeSheetTile('tr-d2-own-script','Кейс для стажёра продаж · вариант 1','День 02 · задание','Разберите учебный кейс и подготовьте сценарий первого разговора с конкретным следующим шагом.',['Откройте кейс «Рога и копыта».','Напишите пять вопросов диагностики и две фразы о пользе.','Составьте список данных для экспертной проверки.','Зафиксируйте, кто, что и к какой дате присылает для КП.']),
-    traineeSheetTile('tr-d3-repeat-products','Повторение: продукты и общий скрипт','День 03 · повторение','Повторите продукты, включая лицензии МВД и МЧС, и общий скрипт продаж.',['Повторите СПК, аттестации, ISO, СУОТ, МВД и МЧС.','Повторите логику: диагностика, польза, КП и конкретный следующий шаг.'],'spk'),
-    traineeSheetTile('tr-d3-general-sales-script','Общий скрипт продаж Mavis Group','День 03 · таблица стажировки','Повторите общий сценарий: диагностика, польза, КП и следующий контакт.',['Сформулируйте причину обращения и пользу.','Соберите вводные без предположений.','Назовите, что проверит эксперт.','Закройте разговор действием, датой, каналом и ответственным.']),
-    traineeSheetTile('tr-d3-mvd','Лицензия МВД','День 03 · материал стажировки','Изучите требования к людям, обучению, оборудованию, справкам и экспертизе по лицензии МВД.',['Составьте список вводных по виду работ, людям, обучению и оборудованию.','Укажите, что нужно проверить эксперту до обещания срока.'],'spk'),
-    traineeSheetTile('tr-d3-mchs','Лицензия МЧС','День 03 · материал стажировки','Изучите виды противопожарных работ, кадровые требования, обучение, оснащение и пакет для подачи.',['Разделите запрос на точные системы/виды работ.','Соберите кадровую матрицу и список подтверждений.'],'spk'),
-    traineeSheetTile('tr-d3-bitrix-regulation','Регламент работы менеджеров в Bitrix24','День 03 · таблица стажировки','Изучите, как фиксировать сделку и не терять контекст для коллег.',['Откройте регламент менеджера в Bitrix.','Проверьте статус, комментарий, документы и назначенное дело.','В каждой сделке зафиксируйте действие, срок и ответственного.'],'bitrix'),
-    traineeSheetTile('tr-d3-tables','Прайс и таблицы менеджера','День 03 · инструменты','Изучите прайс и рабочие таблицы менеджера перед самостоятельной работой.',['Проверьте, какие данные влияют на расчёт.','Подготовьте вопросы по непонятным строкам прайса.'],'bitrix'),
-    traineeSheetTile('tr-d3-bitrix-review','Разбор Bitrix и личных таблиц','День 03 · с РОП','Подготовьте вопросы по работе в Bitrix и личным таблицам менеджера.',['Выпишите непонятные шаги в Bitrix.','На встрече с РОП уточните, как вести сделки и личные таблицы.'],'bitrix'),
-    traineeSheetTile('tr-d4-repeat-day1','Повторение: продукты и скрипт','День 04 · повторение','Закрепите продукты, общий скрипт и лицензии МВД/МЧС перед практикой и экзаменом.',['Повторите СПК, аттестации, ISO, СУОТ, МВД и МЧС.','Повторите скрипт продаж: вопросы, польза, КП и следующий шаг.']),
-    traineeSheetTile('tr-d4-ten-calls','10 холодных звонков','День 04 · практика','Сделайте 10 холодных звонков и фиксируйте каждый результат в Bitrix.',['После каждого звонка зафиксируйте факт разговора, результат и следующий шаг.','Не обещайте срок или результат без проверки исходных данных.']),
-    traineeSheetTile('tr-d4-call-log','Анализ звонков и причины отказов','День 04 · задание','Зафиксируйте результаты звонков, вопросы и основные причины отказов.',['В поле ответа разберите результаты звонков: что получилось, что не получилось и почему.','Выпишите основные причины отказов.','Подготовьте три конкретных вопроса для обсуждения с РОПом.']),
-    traineeSheetTile('tr-d4-first-kp','Первое КП самостоятельно','День 04 · задание','Подготовьте первое КП по учебному кейсу и передайте его на проверку РОПу.',['В поле ответа подготовьте черновик КП только по подтверждённым данным из кейса.','Укажите следующий шаг: кому, что и к какой дате нужно сделать.']),
-    traineeSheetTile('tr-d4-exam','Финальный тест · 20 вопросов','День 04 · итоговая проверка','Завершите стажировку итоговой проверкой знаний.',['Повторите продукты, скрипт, Bitrix и КП.','Пройдите итоговый тест.','Подготовьте развёрнутый ответ по рабочему кейсу.'])
-  ];
+  // Source of truth for the trainee route: three provided Google Sheets.
+  // Each sheet tab becomes exactly one tile; their contents are imported verbatim
+  // into generated/trainee-program.js and are never replaced with staff material.
+  const TRAINEE_SHEET_COURSES = window.MAVIS_TRAINEE_PROGRAM?.courses || [];
   const state = {page:'catalog', course:'', tab:0, referenceView:false, readerNotice:'', documentRequestId:0, presentationSlide:0, presentationRequestId:0, test:false, login:false, loginMode:'register', role:'trainee', audience:'manager', traineeEdit:false, error:'', answer:null, order:[], orderChecked:false, matches:{}, matchChecked:false, caseChoices:{}, caseChecked:false, practiceSaving:false, practiceError:'', traineeSubmissionError:'', traineeDay:0, examVersion:1, examAnswers:{}, examWritten:'', examFinished:false, examSaving:false, examError:'', examResult:null, leaderResults:null, leaderTrainees:[], leaderError:'', governanceMetadata:{},governanceRevisions:[],governanceError:'', chat:false, chatInput:'', chatMessages:[], chatLoading:false, chatError:'', curriculumSaving:false, curriculumError:'', sourceEditorPath:'', sourceEditorHtml:'', sourceEditorLoading:false, sourceEditorSaving:false, sourceEditorError:'', inlineEditorPath:'', inlineEditorHtml:'', inlineEditorLoading:false, inlineEditorSaving:false, inlineEditorError:'', libraryCatalog:{hidden:[],overrides:{},custom:[]}, librarySourcePaths:[], librarySaving:false, libraryError:'', catalogQuery:'', catalogMatches:[], catalogSearchResults:[],catalogSearching:false};
   const progressKey = 'mavis-academy-product-progress-v2', accessKey = 'mavis-academy-access-v1', accountKey='mavis-academy-account-v1';
   let progress = {}, access = null, account = null, searchTimer = null, searchRequestId = 0, librarySaveTimer = null;
@@ -300,14 +276,9 @@
   const saveProgress = () => localStorage.setItem(progressKey, JSON.stringify(progress));
   const roleName = role => role === 'leader' ? 'Руководитель' : role === 'expert' ? 'Эксперт' : role === 'trainee' ? 'Стажёр' : 'Менеджер';
   // Стажёр видит только учебный маршрут. Рабочая база Bitrix открывается после стажировки.
-  const TRAINEE_DAYS = [
-    {title:'Знакомство с компанией и продуктами', intro:'Видео-обучение, общая информация и семь отдельных продуктовых плиток.', result:'Понятна компания, клиент и базовая логика каждого продукта.', courseIds:['tr-d1-video','tr-d1-company','tr-d1-spk','tr-d1-attestation-st','tr-d1-attestation-gs','tr-d1-iso9001','tr-d1-iso9001-periodic','tr-d1-suot45001','tr-d1-suot45001-periodic']},
-    {title:'Офис: продукты, скрипт, прайс и кейс', intro:'Повторение продуктов, общий скрипт, прайс, разбор звонков и учебный кейс.', result:'Конспект продуктов, сценарий первого звонка и план подготовки КП.', courseIds:['tr-d2-repeat-products','tr-d2-script-structure','tr-d2-price-templates','tr-d2-call-analysis','tr-d2-own-script']},
-    {title:'Офис: скрипт, Bitrix и таблицы', intro:'Повторение продуктов и скрипта, лицензии МВД/МЧС, Bitrix и таблицы менеджера.', result:'Понимание процесса в Bitrix, личных таблиц и вводных по лицензиям.', courseIds:['tr-d3-repeat-products','tr-d3-general-sales-script','tr-d3-mvd','tr-d3-mchs','tr-d3-bitrix-regulation','tr-d3-tables','tr-d3-bitrix-review']},
-    {title:'Офис: звонки и экзамен', intro:'Повторение, 10 холодных звонков, анализ результатов, первое КП и экзамен.', result:'Анализ звонков, первое КП и итоговая аттестация по 20 вопросам.', courseIds:['tr-d4-repeat-day1','tr-d4-ten-calls','tr-d4-call-log','tr-d4-first-kp','tr-d4-exam']},
-  ];
+  const TRAINEE_DAYS = window.MAVIS_TRAINEE_PROGRAM?.days || [];
   const TRAINEE_LEGACY_COURSE_IDS=new Set(['tr-d3-script-practice','tr-d4-products','tr-d4-calls','tr-d4-call-analysis','tr-d4-rop']);
-  const TRAINEE_PLAN_VERSION='sales-internship-sheet-2026-11-12.5';
+  const TRAINEE_PLAN_VERSION='trainee-sheets-2026-11-13.1';
   const FINAL_EXAM_BANK = [
     {q:'Клиент выполняет монтаж на объекте 3 класса и просит «просто СПК». Что уточнить первым?', options:['Только срок выдачи','Виды работ, класс объекта, специалистов и исходные документы','Размер скидки'], answer:1},
     {q:'После звонка клиент сказал: «Перезвоните во вторник после совещания». Какой следующий шаг верный?', options:['Оставить комментарий без срока','Создать задачу на вторник с темой разговора и ответственным','Ждать, пока клиент напишет сам'], answer:1},
@@ -340,9 +311,12 @@
   // source, because it is a different material.
   const TRAINEE_TABLE_ONLY_IDS=new Set(['tr-d1-video']);
   const TRAINEE_SOURCE_OF_TRUTH_IDS=new Set(['tr-d1-video','tr-d1-company']);
-  const TRAINEE_CURRICULUM_TEMPLATE='sales-internship-sheet-2026-11-12.5';
+  const TRAINEE_CURRICULUM_TEMPLATE='trainee-sheets-2026-11-13.1';
   const bindTraineeSources=courses=>(Array.isArray(courses)?courses:[]).map(course=>{
     if(!TRAINEE_COURSE_IDS.has(course?.id))return course;
+    // Imported trainee tabs are self-contained: never substitute a staff
+    // passport or a summary for the content of a Google Sheet tab.
+    if(course.importedSheet)return {...course,sources:[],attachments:[],sourceCourse:'',fallbackContent:''};
     const normalized=course;
     const configuredPath=TRAINEE_INTERNAL_SOURCE_PATHS[course.id];
     const sourceMeta={sourceCourse:TRAINEE_INTERNAL_SOURCE_COURSES[course.id]||course.sourceCourse||''};
@@ -357,21 +331,12 @@
       return !saved||saved.curriculumTemplate!==TRAINEE_CURRICULUM_TEMPLATE;
     })||savedCourses.some(course=>TRAINEE_LEGACY_COURSE_IDS.has(course?.id));
     if(!requiresSheetUpgrade)return {courses:bindTraineeSources(savedCourses),days:Array.isArray(days)?days:TRAINEE_DAYS};
-    // The table is the source of truth for prescribed tiles. Keep every
-    // leader-created tile and its assigned day, but repair prior template
-    // versions by adding missing prescribed cards in the exact sheet order.
-    const customByDay=(Array.isArray(days)?days:[]).map(day=>(day?.courseIds||[]).filter(id=>!templates.has(id)&&!TRAINEE_LEGACY_COURSE_IDS.has(id)));
-    const migrated=TRAINEE_SHEET_COURSES.map(template=>{
-      const saved=savedById.get(template.id);
-      if(TRAINEE_SOURCE_OF_TRUTH_IDS.has(template.id))return {...template,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE};
-      return saved?{...saved,title:template.title,eyebrow:template.eyebrow,lead:template.lead,assignment:template.assignment,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE}:{...template,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE};
-    }).concat(savedCourses.filter(course=>course&&!templates.has(course.id)&&!TRAINEE_LEGACY_COURSE_IDS.has(course.id)));
-    const available=new Set(migrated.map(course=>course.id));
-    const normalizedDays=TRAINEE_DAYS.map((day,index)=>({
-      ...day,
-      courseIds:[...day.courseIds,...(customByDay[index]||[]).filter(id=>available.has(id))],
-      reviewCourseIds:[]
-    }));
+    // A new programme explicitly replaces the old trainee catalogue. Do not
+    // retain a former card, summary, source mapping or assignment under a new
+    // sheet-based plan. Subsequent leader edits remain intact because the
+    // version matches on the next load.
+    const migrated=TRAINEE_SHEET_COURSES.map(template=>({...template,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE}));
+    const normalizedDays=TRAINEE_DAYS.map(day=>({...day,courseIds:[...(day.courseIds||[])],reviewCourseIds:[]}));
     return {courses:bindTraineeSources(migrated),days:normalizedDays};
   };
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);
@@ -1057,6 +1022,7 @@
     // the trainee reader: the whole primary material must be readable inside
     // Academy, not reduced to an authored summary or an external link.
     const ownText=editing?`<section class="trainee-live-material"><div class="trainee-live-material-head"><b>${path?'Дополнение к материалу':'Материал плитки'}</b><small>Вставляйте текст, таблицы и изображения прямо сюда — это и есть итоговый вид плитки.</small></div><div class="trainee-live-editable trainee-live-body" contenteditable="true" data-placeholder="Вставьте сюда ваш материал…" oninput="academyLiveTraineeField('content',this.innerHTML)">${safeRichHtml(course.content||'')}</div></section>`:'';
+    const imported=Boolean(course.importedSheet);
     const content=path
       ? `<div id="course-document" class="course-document"><div class="course-loading"><b>Открываю полный материал…</b><span>Загружаю исходную таблицу и чек-лист внутрь плитки.</span></div></div>`
       : editing
@@ -1065,7 +1031,9 @@
     const heading=editing?`<div class="trainee-live-heading"><label><span>Название плитки</span><input class="trainee-live-title-input" value="${esc(course.title||'')}" placeholder="Название плитки" oninput="academyLiveTraineeField('title',this.value)"></label><label><span>Краткое описание</span><textarea class="trainee-live-lead-input" rows="2" placeholder="Коротко: что будет в этой плитке" oninput="academyLiveTraineeField('lead',this.value)">${esc(course.lead||'')}</textarea></label></div>`:`<h1><i>${course.icon||'✓'}</i>${esc(course.title||'Новая плитка')}</h1><p>${esc(course.lead||'Материал для изучения по плану стажировки.')}</p>`;
     const dayIndex=traineeDays.findIndex(day=>day.courseIds.includes(course.id));
     const leaderActions=leaderPreview?`${editing?`<label class="trainee-live-placement">День<select onchange="academySetTraineeTileDay(this.value)"><option value="">Скрыта</option>${traineeDays.map((day,index)=>`<option value="${index}" ${dayIndex===index?'selected':''}>${index+1}</option>`).join('')}</select></label><button class="reader-test" type="button" onclick="academySaveTraineeTile()">Сохранить плитку</button><button class="reader-complete" type="button" onclick="academyToggleTraineeTileEdit()">Готово</button>`:`<button class="reader-edit" type="button" onclick="academyToggleTraineeTileEdit()">✎ Редактировать плитку</button>`}`:'';
-    return shell(`<button class="course-back" type="button" onclick="academyCatalog()">← К плану стажировки</button><header class="reader-head ${editing?'trainee-reader-editing':''}"><div><span>${esc(course.eyebrow||'ПЛАН СТАЖИРОВКИ')}</span>${heading}</div><div class="reader-actions">${leaderActions}<button class="reader-edit" type="button" onclick="academyCopyLink('${course.id}')">Скопировать ссылку</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя</button><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header><section class="reader-layout"><aside class="reader-outline"><b>${editing?'Редактирование в итоговом виде':'Материал стажировки'}</b><p>${editing?'Изменяйте название, описание и текст в самой плитке. После сохранения этот вид увидит стажёр.':'Вся учебная информация находится в этой плитке. Изучите её, выполните задание и пройдите короткую проверку.'}</p><a href="#trainee-material">Материал</a><a href="#trainee-assignment">Задание</a><div class="reader-practice"><span>После чтения</span><b>Проверьте, что сможете применить материал в разговоре с клиентом.</b><button type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></aside><article class="reader-content"><section id="trainee-material" class="course-document custom-tile-document">${content}${path?ownText:''}</section>${traineeAssignmentPanel(course)}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Материал изучен':'✓ Я изучил(а) этот материал'}</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></article></section>`);
+    const practiceCopy=imported?`Проверьте понимание темы «${esc(course.title)}». Вопрос относится только к этой плитке.`:'Проверьте, что сможете применить материал в разговоре с клиентом.';
+    const outlineCopy=editing?'Изменяйте название, описание и текст в самой плитке. После сохранения этот вид увидит стажёр.':imported?'Материал этой вкладки показан внутри Academy.':'Вся учебная информация находится в этой плитке. Изучите её, выполните задание и пройдите короткую проверку.';
+    return shell(`<button class="course-back" type="button" onclick="academyCatalog()">← К плану стажировки</button><header class="reader-head ${editing?'trainee-reader-editing':''}"><div><span>${esc(course.eyebrow||'ПЛАН СТАЖИРОВКИ')}</span>${heading}</div><div class="reader-actions">${leaderActions}<button class="reader-edit" type="button" onclick="academyCopyLink('${course.id}')">Скопировать ссылку</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя</button><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header><section class="reader-layout"><aside class="reader-outline"><b>${editing?'Редактирование в итоговом виде':'Материал стажировки'}</b><p>${outlineCopy}</p><a href="#trainee-material">Материал</a>${course.assignment?'<a href="#trainee-assignment">Задание</a>':''}<div class="reader-practice"><span>После чтения</span><b>${practiceCopy}</b><button type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></aside><article class="reader-content"><section id="trainee-material" class="course-document custom-tile-document">${content}${path?ownText:''}</section>${traineeAssignmentPanel(course)}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Материал изучен':'✓ Я изучил(а) этот материал'}</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></article></section>`);
   }
   function contactsReader(course){
     const path=(course.sources||[])[0]||'';
