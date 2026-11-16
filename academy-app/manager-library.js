@@ -1002,7 +1002,12 @@
     // and measuring instruments.  Sales scripts are not used as a substitute
     // for a technical list.
     .filter(path=>/^02 PRODUCTS\//u.test(path)||isExpertSource(path));
-  function expertWorkflowFromPassport(data){
+  function expertWorkflowFromPassport(data,path){
+    // Current expert check-lists use visible “Шаг N” headings rather than a
+    // spreadsheet leaf named exactly “Ход работы эксперта”.  Read those real
+    // steps first; keep the old sheet variant for earlier imports.
+    const structured=sourceStructuredDocument(data,path,new Set(['workflow']));
+    if(structured)return structured;
     const raw=String(data?.content||'');
     if(!raw)return '';
     if(data?.format==='html'){
@@ -1031,7 +1036,7 @@
       const results=await Promise.all(paths.map(async path=>{
         const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()});
         if(!response.ok)return null;
-        const data=await response.json(),content=expertWorkflowFromPassport(data);
+        const data=await response.json(),content=expertWorkflowFromPassport(data,path);
         return content?{path,content}:null;
       }));
       if(!isCurrent())return;
@@ -1047,10 +1052,11 @@
     const candidates=sourceIndexesForAudience(course,'manager').map(index=>course.sources[index]).filter(path=>path&&!isReferenceMaterial(path));
     return candidates.find(isManagerSource)||candidates[0]||'';
   };
-  function managerWorkflowFromSource(data){
-    const raw=String(data?.content||'');
-    if(!raw)return '';
-    return data?.format==='html'?safeRichHtml(raw):markdown(raw);
+  function managerWorkflowFromSource(data,path){
+    // The work route is intentionally isolated from definition, people and
+    // SI. Showing the full source here duplicated the first three blocks and
+    // made the main workflow look like an unstructured wall of text.
+    return sourceStructuredDocument(data,path,new Set(['workflow']));
   }
   const sourceBlockKind=title=>{
     const value=String(title||'').toLocaleLowerCase('ru');
@@ -1059,7 +1065,7 @@
     // misses headings such as “СИ: как собрать комплект”.  Use explicit
     // Cyrillic boundaries so source sections land in “Инструменты и СИ”.
     if(/средств.{0,18}измер|(?:^|[^а-яё])си(?:$|[^а-яё])|инструмент|оборудован|поверк|калибров|метролог/.test(value))return 'tools';
-    if(/ход работы|этап|порядок|алгоритм|подач|оформлен|выезд|проверка документ|доработк/.test(value))return 'workflow';
+    if(/ход работы|этап|шаг\s*\d|порядок|алгоритм|подач|оформлен|выезд|проверка документ|доработк/.test(value))return 'workflow';
     if(/важно|ошибк|внимани|нельзя|подсказ|риск|срок|периодич|подтвержден/.test(value))return 'important';
     if(/ссылк|реестр|орган|контакт|образец|заявк|документ/.test(value))return 'reference';
     return 'overview';
@@ -1186,7 +1192,7 @@
     try{
       const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()});
       const data=response.ok?await response.json():null;
-      const content=managerWorkflowFromSource(data);
+      const content=managerWorkflowFromSource(data,path);
       if(!isCurrent())return;
       const workflow=content?`<section class="workflow-source"><h3>${esc(sourceTitle(path))}</h3><div class="course-document">${content}</div></section>`:'';
       target.innerHTML=workflow?`<div class="workflow-document">${workflow}</div>`:'<p>Не удалось найти заполненные рабочие материалы менеджера по этой теме.</p>';
