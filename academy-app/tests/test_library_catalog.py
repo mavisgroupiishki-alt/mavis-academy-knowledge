@@ -450,6 +450,8 @@ console.log(JSON.stringify({missing,coverage}));
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
         self.assertIn("const TRAINEE_QUIZ_BANK", source)
+        self.assertIn("const TRAINEE_QUIZ_REQUIRED_COUNT=8", source)
+        self.assertIn("return [...exact,...traineeAppliedQuestions(course)].slice(0,TRAINEE_QUIZ_REQUIRED_COUNT);", source)
         self.assertIn("function traineeQuizModal()", source)
         self.assertIn("Государственное предприятие «УКС Крупского района»", source)
         self.assertIn("tr-sheet-d1-03", source)

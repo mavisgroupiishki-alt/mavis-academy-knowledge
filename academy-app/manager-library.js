@@ -382,6 +382,21 @@
       {q:'Что нужно сделать менеджеру после разговора по NPS?',options:['Зафиксировать результат в карточке задачи и закрыть её','Удалить историю общения','Не записывать оценку клиента'],answer:0}
     ]
   };
+  // У каждой плитки восемь вопросов: сначала факты именно из её материала,
+  // затем прикладные мини-кейсы. Последние не дублируют вопрос «прочитано ли»,
+  // а проверяют, умеет ли стажёр применить материал безопасно в разговоре.
+  const TRAINEE_QUIZ_REQUIRED_COUNT=8;
+  const traineeAppliedQuestions=course=>{
+    const topic=String(course?.title||'этой темы');
+    return [
+      {q:`Кейс по теме «${topic}»: клиент просит сразу назвать итог без вводных. Как действовать?`,options:['Назвать гарантированный результат, чтобы не потерять клиента','Собрать относящиеся к теме исходные данные и подтвердить маршрут до обещания','Перевести разговор сразу на скидку'],answer:1},
+      {q:`Какой следующий шаг после разговора по теме «${topic}» можно считать конкретным?`,options:['«Вернусь с ответом позже»','«До 16:00 клиент присылает указанные материалы; после проверки завтра в 11:00 согласуем вариант»','«Пусть клиент сначала сам решит, нужен ли ему документ»'],answer:1},
+      {q:`Вводных по теме «${topic}» недостаточно. Что нельзя делать?`,options:['Зафиксировать недостающие сведения','Привлечь эксперта, если нужно проверить требования','Обещать срок, состав работ или выдачу документа без проверки'],answer:2},
+      {q:`Что передать эксперту, если вопрос по теме «${topic}» требует проверки?`,options:['Только название компании','Цель клиента, факты по запросу, полученные документы, пробелы и согласованный следующий шаг','Только сообщение «клиент ждёт»'],answer:1},
+      {q:`Клиент ссылается на старую информацию по теме «${topic}». Какой ответ корректен?`,options:['Согласиться, не сверяя источник','Сверить актуальное требование по базе и при спорной детали подтвердить его у эксперта','Сказать, что правила никогда не меняются'],answer:1},
+      {q:`Какой результат разговора по теме «${topic}» нужно оставить в карточке сделки?`,options:['Личное впечатление о клиенте','Факты, согласованное решение, список недостающих данных и следующий шаг с датой','Только отметку «созвон состоялся»'],answer:1}
+    ];
+  };
   // A trainee sees the approved four-day programme, not the staff reference
   // library.  The programme contains its own authored lessons; passports,
   // country-specific ISO references and other working sources stay in staff
@@ -882,12 +897,11 @@
   function loginForm() { const saved=account&&account.login; const rolePassword=state.role==='leader'?'1111':'2222'; return `<span>МAVIS ACADEMY · ДОСТУП</span><h1>${state.loginMode==='register'?'Создайте учебный аккаунт':'Войдите в свой аккаунт'}</h1><p>${state.loginMode==='register'?'Придумайте логин. Для стажёра пароль всегда 2222 — повторная регистрация на этом устройстве не понадобится.':'Введите логин, с которым уже регистрировались.'}</p><div class="login-switch"><button class="${state.loginMode==='register'?'active':''}" onclick="academyLoginMode('register')">Регистрация</button><button class="${state.loginMode==='signin'?'active':''}" onclick="academyLoginMode('signin')">Войти</button></div>${saved?`<button class="saved-account" onclick="academyUseSavedAccount()"><b>Продолжить как ${esc(saved)}</b><span>Вход без повторной регистрации</span></button>`:''}<div class="login-roles"><button class="${state.role==='trainee'?'active':''}" onclick="academyPickRole('trainee')"><b>Стажёр</b><small>4 дня стажировки</small></button><button class="${state.role==='leader'?'active':''}" onclick="academyPickRole('leader')"><b>Руководитель</b><small>результаты стажёров</small></button><button class="${state.role==='manager'?'active':''}" onclick="academyPickRole('manager')"><b>Менеджер</b><small>продукты и продажи</small></button><button class="${state.role==='expert'?'active':''}" onclick="academyPickRole('expert')"><b>Эксперт</b><small>экспертные процессы</small></button></div><label>Логин<input id="academy-name" autocomplete="username" placeholder="Например, anna.zhi"></label><label>Пароль<input id="academy-password" type="password" inputmode="numeric" autocomplete="current-password" value="${rolePassword}" placeholder="${rolePassword}" onkeydown="if(event.key==='Enter') academyLogin()"></label>${state.error?`<p class="login-error">${esc(state.error)}</p>`:''}<button class="login-submit" onclick="academyLogin()">${state.loginMode==='register'?'Создать аккаунт и начать →':'Войти в Academy →'}</button><p class="login-note">Логин сохраняется только на этом устройстве; пароль не сохраняется в браузере.</p>`; }
   function loginLanding() { return `<main class="academy-login-page"><section class="academy-login-intro"><div class="academy-login-mark">M</div><span>MAVIS ACADEMY</span><h2>База знаний<br>и практика<br>в одном месте.</h2><p>Материалы, кейсы, звонки и проверка знаний — по роли сотрудника.</p><div class="academy-login-points"><b>✦ Продукты и процессы</b><b>✦ Практика на кейсах</b><b>✦ Личный прогресс</b></div></section><section class="academy-login-card">${loginForm()}</section></main>`; }
   function traineeQuizFor(course){
-    const exact=TRAINEE_QUIZ_BANK[course?.id];
-    if(exact)return exact;
-    return [
+    const exact=TRAINEE_QUIZ_BANK[course?.id]||[
       {q:`Что нужно сделать до обещания результата по теме «${course?.title||'материал'}»?`,options:['Проверить факты и исходные данные','Сразу назвать срок и стоимость','Предложить документ без диагностики'],answer:0},
       {q:'Какой следующий шаг считается зафиксированным?',options:['«Созвонимся когда-нибудь»','Дата, действие и ответственный','Только ссылка на материал'],answer:1}
     ];
+    return [...exact,...traineeAppliedQuestions(course)].slice(0,TRAINEE_QUIZ_REQUIRED_COUNT);
   }
   function traineeQuizModal(){
     const course=current(),questions=traineeQuizFor(course),answered=Object.keys(state.quizAnswers).length,score=questions.reduce((sum,question,index)=>sum+(state.quizAnswers[index]===question.answer?1:0),0),checked=state.quizChecked,passed=score/questions.length>=.75;
