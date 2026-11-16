@@ -731,7 +731,7 @@
         const heading=headingMatch[2].replace(/^Лист:\s*/,'');
         const tag=level===1?'h2':'h3';
         const className=level===1?'course-document-title':'course-section-heading';
-        output.push(`<${tag} class="${className}">${esc(heading)}</${tag}>`);
+        output.push(`<${tag} class="${className}" data-source-level="${level}">${esc(heading)}</${tag}>`);
         continue;
       }
       const numbered=/^(\d+)[.)]\s+(.+)$/.exec(line);
@@ -1147,6 +1147,17 @@
     contentNodes.forEach(node=>{
       const headingText=String(node.textContent||'').trim();
       if(node.matches('h3.course-section-heading')){
+        const sourceLevel=Number(node.dataset.sourceLevel||0);
+        // Markdown renders both ## and ### as visual H3s.  Keep a ###
+        // document group inside a preceding “Шаг N” rather than treating it
+        // as the next top-level stage.  The source-level marker preserves
+        // that distinction after rendering.
+        if(sourceLevel>2&&currentSheet&&sourceBlockKind(currentSheet.title)==='workflow'){
+          if(!currentGroup){currentGroup={title:currentSheet.title||'Материал',kind:'workflow',items:[]};currentSheet.groups.push(currentGroup);}
+          workflowItem={title:headingText||'Материал',kind:'workflow',body:'',plain:false};
+          currentGroup.items.push(workflowItem);
+          return;
+        }
         currentSheet={title:headingText||'Материалы продукта',groups:[]};sheets.push(currentSheet);currentGroup=null;workflowItem=null;
         return;
       }
