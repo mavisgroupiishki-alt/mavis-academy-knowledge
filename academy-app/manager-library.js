@@ -942,8 +942,8 @@
   function passportSheetsDocument(documentTitle,sheets){
     const visibleSheets=sheets.filter(sheet=>sheet.groups.some(group=>group.items.length));
     if(!visibleSheets.length)return '';
-    const topicHtml=item=>item.plain?item.body:`<details class="passport-topic passport-topic--${item.kind}"><summary><span>${esc(item.title)}</span><i aria-hidden="true">⌄</i></summary><div class="passport-topic-body">${item.body}</div></details>`;
-    return `${documentTitle}<div class="passport-sheets">${visibleSheets.map(sheet=>`<section class="passport-sheet"><h3 class="passport-sheet-title">${esc(sheet.title)}</h3><div class="passport-groups">${sheet.groups.filter(group=>group.items.length).map(group=>`<details class="passport-accordion passport-accordion--${group.kind}"><summary><span class="passport-accordion-copy"><small>${sourceBlockLabel(group.kind)}</small><strong>${esc(group.title)}</strong></span><span class="passport-accordion-meta">${group.items.length} ${group.items.length===1?'тема':'темы'}</span><i aria-hidden="true">⌄</i></summary><div class="passport-accordion-body">${group.items.map(topicHtml).join('')}</div></details>`).join('')}</div></section>`).join('')}</div>`;
+    const topicHtml=item=>item.plain?`<div class="passport-prose">${item.body}</div>`:`<article class="passport-topic passport-topic--${item.kind}"><h4>${esc(item.title)}</h4><div class="passport-topic-body">${item.body}</div></article>`;
+    return `${documentTitle}<div class="passport-sheets">${visibleSheets.map(sheet=>`<section class="passport-sheet"><h3 class="passport-sheet-title">${esc(sheet.title)}</h3><div class="passport-groups">${sheet.groups.filter(group=>group.items.length).map(group=>`<section class="passport-section passport-section--${group.kind}"><header><small>${sourceBlockLabel(group.kind)}</small><h3>${esc(group.title)}</h3></header><div class="passport-section-body">${group.items.map(topicHtml).join('')}</div></section>`).join('')}</div></section>`).join('')}</div>`;
   }
   function traineePassportDocument(content){
     const root=document.createElement('div');root.innerHTML=safeRichHtml(content||'');
