@@ -718,6 +718,77 @@ def register_trainee(candidate_name):
         pass
 
 
+def trainee_display_name(value):
+    return " ".join(str(value or "").split())[:80]
+
+
+def is_real_trainee_name(value):
+    name = trainee_display_name(value)
+    return len(name) >= 2 and not re.match(r"^(?:test|тест|проверка|диагностик|demo|sample|undefined|null)[\s._-]*", name, re.IGNORECASE)
+
+
+def reconcile_trainee_reporting(rows, registered, fallback_trainees):
+    """Use real registered display names consistently in the leader report.
+
+    Older result RPC rows may differ from the login only by case.  The
+    registry is created at sign-in, so it is the authoritative spelling for
+    the leader screen.  Service/demo records are never promoted to a trainee.
+    """
+    display_names = {}
+    merged = {}
+    for item in [*(registered if isinstance(registered, list) else []), *(fallback_trainees if isinstance(fallback_trainees, list) else [])]:
+        if not isinstance(item, dict):
+            continue
+        name = trainee_display_name(item.get("candidate_name"))
+        if not is_real_trainee_name(name):
+            continue
+        key = name.casefold()
+        display_names.setdefault(key, name)
+        merged.setdefault(key, {**item, "candidate_name": display_names[key]})
+        merged[key].update({field: value for field, value in item.items() if value and field != "candidate_name"})
+
+    normalized_rows = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        raw_name = trainee_display_name(row.get("candidate_name"))
+        if not is_real_trainee_name(raw_name):
+            continue
+        key = raw_name.casefold()
+        canonical = display_names.setdefault(key, raw_name)
+        merged.setdefault(key, {"candidate_name": canonical})
+        normalized_rows.append({**row, "candidate_name": canonical})
+
+    return normalized_rows, list(merged.values())
+
+
+def record_knowledge_gap(access, question):
+    """Persist a deduplicated internal-base gap without affecting chat availability."""
+    text = " ".join(str(question or "").split())[:1800]
+    actor = access if isinstance(access, dict) else {}
+    if len(text) < 3:
+        return
+    key = text.casefold()
+    try:
+        state = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+        items = state.get("items", []) if isinstance(state, dict) else []
+        if any(isinstance(item, dict) and item.get("type") == "knowledge_gap" and item.get("question_key") == key for item in items):
+            return
+        event = {
+            "type": "knowledge_gap",
+            "question": text,
+            "question_key": key,
+            "candidate_name": trainee_display_name(actor.get("name")) or "Сотрудник",
+            "role": str(actor.get("role", ""))[:40],
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        write_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": (items + [event])[-800:]})
+    except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+        # This is operational analytics: failing to record it must never make
+        # the assistant unavailable to a trainee or employee.
+        return
+
+
 def save_fallback_attempt(row):
     value = read_fallback_results()
     register_fallback_trainee(row["candidate_name"])
@@ -1301,11 +1372,26 @@ class Handler(SimpleHTTPRequestHandler):
             rows = results_request("POST", "rpc/academy_list_attempts", {"p_access_token": write_token})
             trainees = results_request("POST", "rpc/academy_list_trainees", {"p_access_token": write_token})
             return self.respond_json(self.leader_operational_payload(rows, trainees))
-        except ValueError as exc:
+        except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
             fallback = read_fallback_results()
             payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
             payload["storage"] = "server_fallback"
             return self.respond_json(payload)
+
+    def knowledge_gaps(self):
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            state = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+            items = state.get("items", []) if isinstance(state, dict) else []
+            gaps = [
+                {field: item.get(field) for field in ("question", "candidate_name", "role", "created_at")}
+                for item in reversed(items)
+                if isinstance(item, dict) and item.get("type") == "knowledge_gap"
+            ]
+            return self.respond_json({"gaps": gaps[:100]})
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def trainee_profile(self):
         access = access_payload_from_header(self.headers)
@@ -1357,11 +1443,6 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "invalid_progress"}, 400)
         except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "results_unavailable"}, 503)
-        except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-            fallback = read_fallback_results()
-            payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
-            payload["storage"] = "server_fallback"
-            return self.respond_json(payload)
 
     def leader_operational_payload(self, rows, trainees):
         try:
@@ -1370,20 +1451,32 @@ class Handler(SimpleHTTPRequestHandler):
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError, TypeError):
             registered = []
         fallback_trainees = read_fallback_results().get("trainees", [])
-        merged_trainees = {}
-        for item in [*(trainees if isinstance(trainees, list) else []), *registered, *fallback_trainees]:
+        normalized_rows, merged_trainees = reconcile_trainee_reporting(
+            rows,
+            [*registered, *(trainees if isinstance(trainees, list) else [])],
+            fallback_trainees,
+        )
+        try:
+            submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            submissions = {"items": []}
+        try:
+            events = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            events = {"items": []}
+        canonical_names = {trainee_display_name(item.get("candidate_name")).casefold(): trainee_display_name(item.get("candidate_name")) for item in merged_trainees if isinstance(item, dict) and is_real_trainee_name(item.get("candidate_name"))}
+        normalized_submissions = []
+        for item in submissions.get("items", []) if isinstance(submissions, dict) else []:
             if not isinstance(item, dict):
                 continue
-            name = " ".join(str(item.get("candidate_name", "")).split())
-            if len(name) < 2:
+            name = trainee_display_name(item.get("candidate_name"))
+            if not is_real_trainee_name(name):
                 continue
             key = name.casefold()
-            if key not in merged_trainees:
-                merged_trainees[key] = {**item, "candidate_name": name}
-            else:
-                merged_trainees[key].update({k: v for k, v in item.items() if v and k != "candidate_name"})
-        submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
-        events = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+            canonical = canonical_names.setdefault(key, name)
+            if not any(trainee_display_name(existing.get("candidate_name")).casefold() == key for existing in merged_trainees if isinstance(existing, dict)):
+                merged_trainees.append({"candidate_name": canonical})
+            normalized_submissions.append({**item, "candidate_name": canonical})
         event_items = events.get("items", []) if isinstance(events, dict) else []
         opens = [item for item in event_items if item.get("type") == "course_open"]
         errors = [item for item in event_items if item.get("type") in {"client_error", "unhandled_rejection"}]
@@ -1392,9 +1485,9 @@ class Handler(SimpleHTTPRequestHandler):
             course_id = item.get("course_id") or "unknown"
             course_opens[course_id] = course_opens.get(course_id, 0) + 1
         return {
-            "results": rows,
-            "trainees": list(merged_trainees.values()),
-            "submissions": (submissions.get("items", []) if isinstance(submissions, dict) else [])[-100:],
+            "results": normalized_rows,
+            "trainees": merged_trainees,
+            "submissions": normalized_submissions[-100:],
             "analytics": {"course_opens": course_opens, "client_errors": errors[-50:], "opened_materials": len(opens)},
         }
 
@@ -1665,7 +1758,8 @@ class Handler(SimpleHTTPRequestHandler):
         stage = "request"
         sources = []
         try:
-            role = access_role_from_header(self.headers)
+            access = access_payload_from_header(self.headers)
+            role = access.get("role") if access else None
             if not role:
                 return self.respond_json({"error": "auth_required", "message": "Войдите в Academy, чтобы задать вопрос помощнику."}, 401)
             if role not in ACCESS_ROLES:
@@ -1691,11 +1785,13 @@ class Handler(SimpleHTTPRequestHandler):
             # Direct source opening remains protected by document_access_for.
             sources = select_knowledge_sources(question, knowledge_paths())
             if not sources:
-                return self.respond_json({"mode": "unavailable", "message": "Не удалось получить материалы базы знаний"}, 503)
+                # External search may still answer the question, but the gap
+                # must be visible to the leader as work for the knowledge base.
+                record_knowledge_gap(access, question)
             token = os.getenv("ACADEMY_AI_TOKEN", "")
             if not token:
                 return self.respond_json({"mode": "not_configured", "message": "Помощник ещё не настроен на сервере"}, 503)
-            evidence = "\n\n".join("ИСТОЧНИК: " + source["path"] + "\n" + source["text"] for source in sources)
+            evidence = "\n\n".join("ИСТОЧНИК: " + source["path"] + "\n" + source["text"] for source in sources) or "Внутренняя база Mavis: по этому вопросу материалов не найдено. Не выдавай предположения за внутреннюю инструкцию."
             system = (
                 "Ты — помощник Mavis Group. Отвечай по-русски, точно и по существу. "
                 "Всегда отделяй разделы «Внутренняя база Mavis» и «Открытые источники по Республике Беларусь». "
@@ -1867,6 +1963,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/academy/leader-results":
             return self.academy_leader_results()
+        if self.path == "/api/academy/knowledge-gaps":
+            return self.knowledge_gaps()
         if self.path == "/api/academy/trainee-profile":
             return self.trainee_profile()
         if self.path.startswith("/api/academy/material-metadata"):

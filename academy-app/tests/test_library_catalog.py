@@ -318,6 +318,15 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("academyReturnToStaff", source)
         self.assertIn("!['full-library','company'].includes(course.id)", source)
         self.assertIn("Полный рабочий регламент менеджера", source)
+        self.assertIn('id="workspace-script"', source)
+        self.assertIn('>Скрипт</a>', source)
+        self.assertIn("function loadManagerScripts()", source)
+        self.assertIn("const MANAGER_DAY_TWO_CARDS=", source)
+        self.assertIn("Скрипт продаж Mavis Group", source)
+        self.assertIn("Прайс и коммерческое предложение", source)
+        self.assertIn("Кейс для первого КП", source)
+        self.assertIn("Разбор звонков", source)
+        self.assertIn("workspace-script-source", source)
         self.assertNotIn('<a href="#workspace-tips">Подсказки</a>', source)
         self.assertNotIn("Подробный ход работы из паспортов", source)
         self.assertIn("workflow-document", source)
@@ -727,6 +736,49 @@ class KnowledgeAssistantRetrievalTests(unittest.TestCase):
 
 
 class PersistentStateTransportTests(unittest.TestCase):
+    def test_registered_trainee_name_is_used_for_case_variant_results(self):
+        rows, trainees = server.reconcile_trainee_reporting(
+            [{"candidate_name": "анна", "attempt_type": "quiz"}, {"candidate_name": "test-run", "attempt_type": "quiz"}],
+            [{"candidate_name": "Анна", "first_seen_at": "2026-11-16T08:00:00Z"}],
+            [],
+        )
+
+        self.assertEqual([item["candidate_name"] for item in trainees], ["Анна"])
+        self.assertEqual([item["candidate_name"] for item in rows], ["Анна"])
+
+    def test_leader_results_falls_back_when_primary_store_is_temporarily_unavailable(self):
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+
+        self.assertIn('except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):\n            fallback = read_fallback_results()', backend)
+        self.assertIn('"submissions": normalized_submissions[-100:]', backend)
+
+    def test_knowledge_gap_is_saved_once_without_breaking_a_question(self):
+        saved = []
+        state = {"items": []}
+
+        def save(*args):
+            state.clear()
+            state.update(args[2])
+            saved.append(args[2])
+
+        with patch.object(server, "read_auxiliary_state", side_effect=lambda *_: state), patch.object(
+            server, "write_auxiliary_state", side_effect=save
+        ):
+            server.record_knowledge_gap({"name": "Анна", "role": "manager"}, "Какой документ нужен для нового редкого продукта?")
+            server.record_knowledge_gap({"name": "Анна", "role": "manager"}, "Какой документ нужен для нового редкого продукта?")
+
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]["items"][0]["type"], "knowledge_gap")
+        self.assertEqual(saved[0]["items"][0]["question"], "Какой документ нужен для нового редкого продукта?")
+
+    def test_governance_exposes_unanswered_knowledge_questions(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+
+        self.assertIn('/api/academy/knowledge-gaps', source)
+        self.assertIn('Вопросы без ответа в базе', source)
+        self.assertIn('def knowledge_gaps(self):', backend)
+
     def test_revision_log_failure_does_not_block_primary_save(self):
         with patch.object(server, "append_revision", side_effect=server.HTTPError("https://state", 400, "invalid_key", None, None)):
             self.assertIsNone(server.append_revision_best_effort("curriculum", "trainee_curriculum", {"courses": []}, "Руководитель"))
