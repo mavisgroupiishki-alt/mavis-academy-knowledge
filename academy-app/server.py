@@ -552,9 +552,12 @@ def persistent_state_request(method, key, value=None):
             # storage credentials.  The status is enough to diagnose a remote
             # state-store configuration problem in the server log.
             print(f"Academy state store failed: cloudflare HTTP {exc.code}", flush=True)
-            if exc.code not in {401, 403}:
-                return supabase_state_request(method, key, value)
-            raise
+            # Cloudflare may reject a valid Academy request when its Worker
+            # secret is rotated or its route is temporarily unavailable. The
+            # active Supabase Academy store is a server-side durable mirror;
+            # use it for every Cloudflare HTTP failure, including 401/403,
+            # rather than turning an editor action into a lost change.
+            return supabase_state_request(method, key, value)
         except (URLError, TimeoutError):
             return supabase_state_request(method, key, value)
         payload = json.loads(raw.decode("utf-8")) if raw else {}
