@@ -224,8 +224,8 @@ class CourseSourceContractTests(unittest.TestCase):
         styles = (server.ROOT / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("const sourceBlockKind=title=>", source)
-        self.assertIn('class="source-block source-block--${block.kind}"', source)
-        self.assertIn("contentNodes[0].classList.contains('course-sheet')", source)
+        self.assertIn('class="passport-accordion passport-accordion--${group.kind}"', source)
+        self.assertIn("contentNodes.flatMap(node=>node.classList.contains('course-sheet')", source)
         self.assertIn("node.matches('details.course-topic')", source)
         self.assertIn("currentTarget.innerHTML=sourceConceptDocument(data,path)", source)
         self.assertNotIn("isStaff(access?.role||state.role)?sourceConceptDocument", source)
@@ -234,8 +234,9 @@ class CourseSourceContractTests(unittest.TestCase):
         for product in ("spk", "attestation", "'iso-suot'"):
             self.assertIn(f"{product}:", source)
         self.assertIn("if(productPractice)return productPractice", source)
-        self.assertIn(".source-blocks", styles)
-        self.assertIn(".source-block--tools", styles)
+        self.assertIn(".passport-accordion", styles)
+        self.assertIn(".passport-topic", styles)
+        self.assertIn(".passport-accordion--tools", styles)
 
     def test_metal_and_sro_have_role_checklists_with_complete_reference_lists(self):
         project = server.ROOT.parent

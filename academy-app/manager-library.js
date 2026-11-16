@@ -956,36 +956,50 @@
     const titleNode=nodes.find(node=>/^H[1-2]$/.test(node.tagName));
     const documentTitle=titleNode?`<h2 class="source-document-title">${titleNode.innerHTML}</h2>`:'';
     let contentNodes=titleNode?nodes.filter(node=>node!==titleNode):nodes;
-    // Spreadsheet passports are rendered as one .course-sheet wrapper whose
-    // direct children are <details class="course-topic">.  The previous
-    // renderer only unwrapped a document with exactly one root node, so a
-    // title plus that wrapper became one giant card.  Unwrap the sheet after
-    // extracting the document title and keep every original row as a block.
-    if(contentNodes.length===1&&contentNodes[0].classList.contains('course-sheet')){
-      contentNodes=[...contentNodes[0].children].filter(node=>String(node.textContent||'').trim());
-    }
-    const blocks=[];let current=null;
-    const push=()=>{if(current&&current.nodes.length)blocks.push(current);};
+    // A spreadsheet passport has a hierarchy: sheet -> source heading -> row.
+    // Do not turn every row into a large card: it makes long lists of SIs and
+    // specialists look fragmented.  Keep all original values, but render the
+    // hierarchy as two levels of native accordions.
+    contentNodes=contentNodes.flatMap(node=>node.classList.contains('course-sheet')?[...node.children]:[node])
+      .filter(node=>String(node.textContent||'').trim());
+    const sheets=[];let currentSheet=null,currentGroup=null;
+    const ensureSheet=title=>{
+      if(!currentSheet){currentSheet={title:title||'Материалы продукта',groups:[]};sheets.push(currentSheet);}
+      return currentSheet;
+    };
+    const ensureGroup=title=>{
+      const sheet=ensureSheet();
+      if(!currentGroup){currentGroup={title:title||sheet.title||'Материал',kind:sourceBlockKind(title||sheet.title),items:[]};sheet.groups.push(currentGroup);}
+      return currentGroup;
+    };
     contentNodes.forEach(node=>{
+      const headingText=String(node.textContent||'').trim();
+      if(node.matches('h3.course-section-heading')){
+        currentSheet={title:headingText||'Материалы продукта',groups:[]};sheets.push(currentSheet);currentGroup=null;
+        return;
+      }
+      if(node.matches('h3.course-sheet-title')){
+        const sheet=ensureSheet();
+        currentGroup={title:headingText||'Материал',kind:sourceBlockKind(headingText),items:[]};sheet.groups.push(currentGroup);
+        return;
+      }
       if(node.matches('details.course-topic')){
-        push();
         const summary=node.querySelector('summary'),body=node.querySelector('.course-topic-body');
         const topicTitle=String(summary?.textContent||node.textContent||'').replace(/\s*Открыть\s*$/,'').trim()||'Материал';
-        current={title:topicTitle,kind:sourceBlockKind(topicTitle),nodes:body?[...body.children].map(child=>child.cloneNode(true)):[node.cloneNode(true)]};
-        push();current=null;
+        ensureGroup().items.push({title:topicTitle,kind:sourceBlockKind(topicTitle),body:body?[...body.children].map(child=>child.outerHTML).join(''):node.outerHTML});
         return;
       }
       if(isHeading(node)){
-        push();
-        current={title:String(node.textContent||'').trim(),kind:sourceBlockKind(node.textContent),nodes:[]};
+        const sheet=ensureSheet();
+        currentGroup={title:headingText||'Материал',kind:sourceBlockKind(headingText),items:[]};sheet.groups.push(currentGroup);
         return;
       }
-      if(!current)current={title:'Материал',kind:'overview',nodes:[]};
-      current.nodes.push(node.cloneNode(true));
+      ensureGroup().items.push({title:'Материал',kind:'overview',body:node.outerHTML,plain:true});
     });
-    push();
-    if(!blocks.length)return full;
-    return `${documentTitle}<div class="source-blocks">${blocks.map((block,index)=>`<section class="source-block source-block--${block.kind}" id="source-block-${index}"><header class="source-block-heading"><span class="source-block-label">${sourceBlockLabel(block.kind)}</span><h3>${esc(block.title)}</h3></header><div class="source-block-body">${block.nodes.map(node=>node.outerHTML).join('')}</div></section>`).join('')}</div>`;
+    const visibleSheets=sheets.filter(sheet=>sheet.groups.some(group=>group.items.length));
+    if(!visibleSheets.length)return full;
+    const topicHtml=item=>item.plain?item.body:`<details class="passport-topic passport-topic--${item.kind}"><summary><span>${esc(item.title)}</span><i aria-hidden="true">⌄</i></summary><div class="passport-topic-body">${item.body}</div></details>`;
+    return `${documentTitle}<div class="passport-sheets">${visibleSheets.map(sheet=>`<section class="passport-sheet"><h3 class="passport-sheet-title">${esc(sheet.title)}</h3><div class="passport-groups">${sheet.groups.filter(group=>group.items.length).map(group=>`<details class="passport-accordion passport-accordion--${group.kind}"><summary><span class="passport-accordion-copy"><small>${sourceBlockLabel(group.kind)}</small><strong>${esc(group.title)}</strong></span><span class="passport-accordion-meta">${group.items.length} ${group.items.length===1?'тема':'темы'}</span><i aria-hidden="true">⌄</i></summary><div class="passport-accordion-body">${group.items.map(topicHtml).join('')}</div></details>`).join('')}</div></section>`).join('')}</div>`;
   }
   async function loadManagerDetailedWorkflow(){
     const course=current(),target=document.getElementById('manager-detailed-flow');
