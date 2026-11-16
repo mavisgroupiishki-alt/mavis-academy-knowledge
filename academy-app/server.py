@@ -724,7 +724,19 @@ def trainee_display_name(value):
 
 def is_real_trainee_name(value):
     name = trainee_display_name(value)
-    return len(name) >= 2 and not re.match(r"^(?:test|тест|проверка|диагностик|demo|sample|undefined|null)[\s._-]*", name, re.IGNORECASE)
+    return len(name) >= 2 and not re.match(r"^(?:test|тест|проверка|диагностик|demo|демо|sample|техническ|technical|service|сервис|system|система|admin|administrator|mavis|undefined|null)[\s._-]*", name, re.IGNORECASE)
+
+
+def remove_technical_trainees(items):
+    """Keep only actual trainee registrations when a leader cleans the registry."""
+    kept = []
+    removed = 0
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and is_real_trainee_name(item.get("candidate_name")):
+            kept.append(item)
+        else:
+            removed += 1
+    return kept, removed
 
 
 def reconcile_trainee_reporting(rows, registered, fallback_trainees):
@@ -1272,6 +1284,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.save_academy_attempt()
         if self.path == "/api/academy/trainee-progress":
             return self.save_trainee_progress()
+        if self.path == "/api/academy/trainees/cleanup":
+            return self.cleanup_technical_trainees()
         if self.path != "/api/ai/grade":
             return self.respond_json({"error": "not_found"}, 404)
         try:
@@ -1377,6 +1391,25 @@ class Handler(SimpleHTTPRequestHandler):
             payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
             payload["storage"] = "server_fallback"
             return self.respond_json(payload)
+
+    def cleanup_technical_trainees(self):
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
+            registry_items = registry.get("items", []) if isinstance(registry, dict) else []
+            clean_registry, registry_removed = remove_technical_trainees(registry_items)
+            if registry_removed:
+                write_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": clean_registry})
+
+            fallback = read_fallback_results()
+            clean_fallback, fallback_removed = remove_technical_trainees(fallback.get("trainees", []))
+            if fallback_removed:
+                fallback["trainees"] = clean_fallback
+                write_fallback_results(fallback)
+            return self.respond_json({"removed": registry_removed + fallback_removed})
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def knowledge_gaps(self):
         if access_role_from_header(self.headers) != "leader":

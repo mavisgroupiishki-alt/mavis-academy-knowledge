@@ -317,7 +317,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("'workspace-other','Другое'", source)
         self.assertIn("academyReturnToStaff", source)
         self.assertIn("!['full-library','company'].includes(course.id)", source)
-        self.assertIn("Полный рабочий регламент менеджера", source)
+        self.assertIn("Ход работы менеджера", source)
+        self.assertIn("Менеджер не готовит заявление, перечень СИ или технический пакет", source)
         self.assertIn('id="workspace-script"', source)
         self.assertIn('>Скрипт</a>', source)
         self.assertIn("function loadManagerScripts()", source)
@@ -327,6 +328,11 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Кейс для первого КП", source)
         self.assertIn("Разбор звонков", source)
         self.assertIn("workspace-script-source", source)
+        self.assertIn("function managerSalesWorkflow", source)
+        self.assertIn("Проверить действующие документы и реестры", source)
+        self.assertIn("Материалы отдела продаж · день 2", source)
+        self.assertIn("academyGovernance()", source)
+        self.assertIn("academyCleanupTechnicalTrainees", source)
         self.assertNotIn('<a href="#workspace-tips">Подсказки</a>', source)
         self.assertNotIn("Подробный ход работы из паспортов", source)
         self.assertIn("workflow-document", source)
@@ -666,13 +672,14 @@ class KnowledgeAssistantRetrievalTests(unittest.TestCase):
         self.assertEqual(sources[0]["path"], passport_path)
         self.assertIn("направить её на электронную почту органа", sources[0]["text"])
 
-    def test_manager_reader_loads_one_detailed_workflow_material(self):
+    def test_manager_reader_uses_sales_route_not_expert_workflow_material(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
-        self.assertIn("function loadManagerDetailedWorkflow()", source)
-        self.assertIn("managerWorkflowSourceFor(course)", source)
-        self.assertIn("const path=managerWorkflowSourceFor(course);", source)
-        self.assertIn('id="manager-detailed-flow"', source)
+        self.assertIn("function managerSalesWorkflow(course)", source)
+        self.assertIn("Ход работы менеджера", source)
+        self.assertIn("Проверить действующие документы и реестры", source)
+        self.assertIn("Менеджер не готовит заявление, перечень СИ или технический пакет", source)
+        self.assertNotIn("loadDocument();loadManagerDetailedWorkflow();", source)
 
     def test_each_product_passport_has_a_detailed_expert_flow(self):
         manifest = json.loads(server.COURSE_ACCESS_FILE.read_text(encoding="utf-8"))
@@ -745,6 +752,16 @@ class PersistentStateTransportTests(unittest.TestCase):
 
         self.assertEqual([item["candidate_name"] for item in trainees], ["Анна"])
         self.assertEqual([item["candidate_name"] for item in rows], ["Анна"])
+
+    def test_technical_trainee_rows_are_removed_from_registry_data(self):
+        kept, removed = server.remove_technical_trainees([
+            {"candidate_name": "Анна"},
+            {"candidate_name": "test-run"},
+            {"candidate_name": "Демо 1"},
+        ])
+
+        self.assertEqual([item["candidate_name"] for item in kept], ["Анна"])
+        self.assertEqual(removed, 2)
 
     def test_leader_results_falls_back_when_primary_store_is_temporarily_unavailable(self):
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
