@@ -255,6 +255,7 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("function expertWorkflowFromPassport(data,path)", source)
         self.assertIn("sourceStructuredDocument(data,path,new Set(['workflow']))", source)
         self.assertIn("node.tagName==='H3'&&currentGroup?.kind==='workflow'", source)
+        self.assertIn("if(currentGroup?.kind==='workflow'){\n          workflowItem=", source)
 
     def test_staff_reference_lists_accept_headed_checklists_as_well_as_sheet_rows(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")

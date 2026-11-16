@@ -1152,6 +1152,11 @@
       }
       if(node.matches('h3.course-sheet-title')){
         const sheet=ensureSheet();
+        if(currentGroup?.kind==='workflow'){
+          workflowItem={title:headingText||'Материал',kind:'workflow',body:'',plain:false};
+          currentGroup.items.push(workflowItem);
+          return;
+        }
         currentGroup={title:headingText||'Материал',kind:sourceBlockKind(headingText),items:[]};sheet.groups.push(currentGroup);workflowItem=null;
         return;
       }
