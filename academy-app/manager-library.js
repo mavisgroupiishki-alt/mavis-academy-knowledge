@@ -953,12 +953,28 @@
     }
     if(!nodes.length)return full;
     const isHeading=node=>/^H[1-4]$/.test(node.tagName);
-    const titleNode=nodes.find(node=>isHeading(node));
+    const titleNode=nodes.find(node=>/^H[1-2]$/.test(node.tagName));
     const documentTitle=titleNode?`<h2 class="source-document-title">${titleNode.innerHTML}</h2>`:'';
-    const contentNodes=titleNode?nodes.filter(node=>node!==titleNode):nodes;
+    let contentNodes=titleNode?nodes.filter(node=>node!==titleNode):nodes;
+    // Spreadsheet passports are rendered as one .course-sheet wrapper whose
+    // direct children are <details class="course-topic">.  The previous
+    // renderer only unwrapped a document with exactly one root node, so a
+    // title plus that wrapper became one giant card.  Unwrap the sheet after
+    // extracting the document title and keep every original row as a block.
+    if(contentNodes.length===1&&contentNodes[0].classList.contains('course-sheet')){
+      contentNodes=[...contentNodes[0].children].filter(node=>String(node.textContent||'').trim());
+    }
     const blocks=[];let current=null;
     const push=()=>{if(current&&current.nodes.length)blocks.push(current);};
     contentNodes.forEach(node=>{
+      if(node.matches('details.course-topic')){
+        push();
+        const summary=node.querySelector('summary'),body=node.querySelector('.course-topic-body');
+        const topicTitle=String(summary?.textContent||node.textContent||'').replace(/\s*Открыть\s*$/,'').trim()||'Материал';
+        current={title:topicTitle,kind:sourceBlockKind(topicTitle),nodes:body?[...body.children].map(child=>child.cloneNode(true)):[node.cloneNode(true)]};
+        push();current=null;
+        return;
+      }
       if(isHeading(node)){
         push();
         current={title:String(node.textContent||'').trim(),kind:sourceBlockKind(node.textContent),nodes:[]};
