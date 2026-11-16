@@ -1054,8 +1054,11 @@
   }
   const sourceBlockKind=title=>{
     const value=String(title||'').toLocaleLowerCase('ru');
-    if(/специал|штат|кадр|персонал|руководител|прораб|мастер|инженер|образован|стаж/.test(value))return 'people';
-    if(/средств.{0,18}измер|\bси\b|инструмент|оборудован|поверк|калибров|метролог/.test(value))return 'tools';
+    if(/специал|штат|кадр|персонал|руководител|прораб|мастер|инженер|образован|стаж|\bлюд|сотрудник/.test(value))return 'people';
+    // `\b` only recognises Latin word characters in JavaScript, therefore it
+    // misses headings such as “СИ: как собрать комплект”.  Use explicit
+    // Cyrillic boundaries so source sections land in “Инструменты и СИ”.
+    if(/средств.{0,18}измер|(?:^|[^а-яё])си(?:$|[^а-яё])|инструмент|оборудован|поверк|калибров|метролог/.test(value))return 'tools';
     if(/ход работы|этап|порядок|алгоритм|подач|оформлен|выезд|проверка документ|доработк/.test(value))return 'workflow';
     if(/важно|ошибк|внимани|нельзя|подсказ|риск|срок|периодич|подтвержден/.test(value))return 'important';
     if(/ссылк|реестр|орган|контакт|образец|заявк|документ/.test(value))return 'reference';
@@ -1161,6 +1164,14 @@
     });
     const allowed=allowedKinds instanceof Set?allowedKinds:new Set(allowedKinds||[]);
     const filtered=sheets.map(sheet=>({...sheet,groups:sheet.groups.filter(group=>allowed.has(group.kind))})).filter(sheet=>sheet.groups.length);
+    // “Понятие” is deliberately a short orientation, not a duplicate of the
+    // whole passport.  The detailed people, SI, flow and reference sections
+    // have their own blocks in the card, so keep only the first actual
+    // overview group here.
+    if(allowed.size===1&&allowed.has('overview')){
+      const first=filtered.find(sheet=>sheet.groups[0]);
+      return first?passportSheetsDocument(documentTitle,[{...first,groups:[first.groups[0]]}]):'';
+    }
     return passportSheetsDocument(documentTitle,filtered)||'';
   }
   const sourceConceptDocument=(data,path)=>sourceStructuredDocument(data,path,new Set(['overview']));

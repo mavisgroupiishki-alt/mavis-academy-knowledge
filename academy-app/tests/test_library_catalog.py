@@ -250,6 +250,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("const sourceConceptDocument=(data,path)=>sourceStructuredDocument", source)
         self.assertIn("const sourceOtherDocument=(data,path)=>sourceStructuredDocument", source)
         self.assertIn("mode==='full'?readableDocument(data,path,isReferenceMaterial(path)):sourceConceptDocument(data,path)", source)
+        self.assertIn("if(allowed.size===1&&allowed.has('overview'))", source)
+        self.assertIn("groups:[first.groups[0]]", source)
 
     def test_staff_reference_lists_accept_headed_checklists_as_well_as_sheet_rows(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
@@ -259,6 +261,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("entry.markdown?markdown(entry.content):richText(entry.content)", source)
         self.assertIn("Загружаю специалистов из первоисточников", source)
         self.assertIn("Загружаю инструменты и СИ из первоисточников", source)
+        self.assertIn("|\\bлюд|сотрудник", source)
+        self.assertIn("(?:^|[^а-яё])си(?:$|[^а-яё])", source)
 
     def test_metal_and_sro_have_role_checklists_with_complete_reference_lists(self):
         project = server.ROOT.parent
