@@ -939,6 +939,46 @@
     return 'overview';
   };
   const sourceBlockLabel=kind=>({overview:'Суть и условия',people:'Специалисты',tools:'Инструменты и СИ',workflow:'Порядок работы',important:'Важно',reference:'Документы и справки'}[kind]||'Материал');
+  function passportSheetsDocument(documentTitle,sheets){
+    const visibleSheets=sheets.filter(sheet=>sheet.groups.some(group=>group.items.length));
+    if(!visibleSheets.length)return '';
+    const topicHtml=item=>item.plain?item.body:`<details class="passport-topic passport-topic--${item.kind}"><summary><span>${esc(item.title)}</span><i aria-hidden="true">⌄</i></summary><div class="passport-topic-body">${item.body}</div></details>`;
+    return `${documentTitle}<div class="passport-sheets">${visibleSheets.map(sheet=>`<section class="passport-sheet"><h3 class="passport-sheet-title">${esc(sheet.title)}</h3><div class="passport-groups">${sheet.groups.filter(group=>group.items.length).map(group=>`<details class="passport-accordion passport-accordion--${group.kind}"><summary><span class="passport-accordion-copy"><small>${sourceBlockLabel(group.kind)}</small><strong>${esc(group.title)}</strong></span><span class="passport-accordion-meta">${group.items.length} ${group.items.length===1?'тема':'темы'}</span><i aria-hidden="true">⌄</i></summary><div class="passport-accordion-body">${group.items.map(topicHtml).join('')}</div></details>`).join('')}</div></section>`).join('')}</div>`;
+  }
+  function traineePassportDocument(content){
+    const root=document.createElement('div');root.innerHTML=safeRichHtml(content||'');
+    const source=root.querySelector('.trainee-sheet-source')||root;
+    const nodes=[...source.children].filter(node=>String(node.textContent||'').trim());
+    if(!nodes.length)return safeRichHtml(content||'');
+    const titleNode=nodes.find(node=>node.matches('h2'));
+    const documentTitle=titleNode?`<h2 class="source-document-title">${titleNode.innerHTML}</h2>`:'';
+    const sheets=[{title:'Материалы плитки',groups:[]}];let currentGroup=null;
+    const ensureGroup=title=>{
+      if(!currentGroup){currentGroup={title:title||'Материал',kind:sourceBlockKind(title),items:[]};sheets[0].groups.push(currentGroup);}
+      return currentGroup;
+    };
+    nodes.forEach(node=>{
+      if(node===titleNode)return;
+      const title=String(node.textContent||'').trim();
+      if(node.matches('h2,h3')){currentGroup={title:title||'Материал',kind:sourceBlockKind(title),items:[]};sheets[0].groups.push(currentGroup);return;}
+      if(node.matches('.course-table-wrap')){
+        const rows=[...node.querySelectorAll('tr')].map(row=>[...row.querySelectorAll('th,td')]);
+        const dataRows=rows.filter(cells=>cells.length>1&&cells.some(cell=>String(cell.textContent||'').trim()));
+        if(dataRows.length){
+          const firstLabel=String(dataRows[0][0]?.textContent||'').trim();
+          const group=ensureGroup(firstLabel||'Материал');
+          dataRows.forEach(cells=>{
+            const itemTitle=String(cells[0].textContent||'').trim()||'Материал';
+            const body=cells.slice(1).map(cell=>cell.innerHTML).join('');
+            if(body.trim())group.items.push({title:itemTitle,kind:sourceBlockKind(itemTitle),body});
+          });
+          return;
+        }
+      }
+      ensureGroup().items.push({title:'Материал',kind:'overview',body:node.outerHTML,plain:true});
+    });
+    return passportSheetsDocument(documentTitle,sheets)||safeRichHtml(content||'');
+  }
   function sourceConceptDocument(data,path){
     const full=readableDocument(data,path,isReferenceMaterial(path));
     const root=document.createElement('div');root.innerHTML=full;
@@ -996,10 +1036,7 @@
       }
       ensureGroup().items.push({title:'Материал',kind:'overview',body:node.outerHTML,plain:true});
     });
-    const visibleSheets=sheets.filter(sheet=>sheet.groups.some(group=>group.items.length));
-    if(!visibleSheets.length)return full;
-    const topicHtml=item=>item.plain?item.body:`<details class="passport-topic passport-topic--${item.kind}"><summary><span>${esc(item.title)}</span><i aria-hidden="true">⌄</i></summary><div class="passport-topic-body">${item.body}</div></details>`;
-    return `${documentTitle}<div class="passport-sheets">${visibleSheets.map(sheet=>`<section class="passport-sheet"><h3 class="passport-sheet-title">${esc(sheet.title)}</h3><div class="passport-groups">${sheet.groups.filter(group=>group.items.length).map(group=>`<details class="passport-accordion passport-accordion--${group.kind}"><summary><span class="passport-accordion-copy"><small>${sourceBlockLabel(group.kind)}</small><strong>${esc(group.title)}</strong></span><span class="passport-accordion-meta">${group.items.length} ${group.items.length===1?'тема':'темы'}</span><i aria-hidden="true">⌄</i></summary><div class="passport-accordion-body">${group.items.map(topicHtml).join('')}</div></details>`).join('')}</div></section>`).join('')}</div>`;
+    return passportSheetsDocument(documentTitle,sheets)||full;
   }
   async function loadManagerDetailedWorkflow(){
     const course=current(),target=document.getElementById('manager-detailed-flow');
@@ -1105,6 +1142,8 @@
       ? `<div id="course-document" class="course-document"><div class="course-loading"><b>Открываю полный материал…</b><span>Загружаю исходную таблицу и чек-лист внутрь плитки.</span></div></div>`
       : editing
         ? ownText
+      : imported
+        ? traineePassportDocument(course.content)
         : safeRichHtml(course.content||'<p class="trainee-empty-copy">Материал ещё не добавлен.</p>');
     const heading=editing?`<div class="trainee-live-heading"><label><span>Название плитки</span><input class="trainee-live-title-input" value="${esc(course.title||'')}" placeholder="Название плитки" oninput="academyLiveTraineeField('title',this.value)"></label><label><span>Краткое описание</span><textarea class="trainee-live-lead-input" rows="2" placeholder="Коротко: что будет в этой плитке" oninput="academyLiveTraineeField('lead',this.value)">${esc(course.lead||'')}</textarea></label></div>`:`<h1><i>${course.icon||'✓'}</i>${esc(course.title||'Новая плитка')}</h1><p>${esc(course.lead||'Материал для изучения по плану стажировки.')}</p>`;
     const dayIndex=traineeDays.findIndex(day=>day.courseIds.includes(course.id));

@@ -224,6 +224,8 @@ class CourseSourceContractTests(unittest.TestCase):
         styles = (server.ROOT / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("const sourceBlockKind=title=>", source)
+        self.assertIn("function traineePassportDocument(content)", source)
+        self.assertIn("? traineePassportDocument(course.content)", source)
         self.assertIn('class="passport-accordion passport-accordion--${group.kind}"', source)
         self.assertIn("contentNodes.flatMap(node=>node.classList.contains('course-sheet')", source)
         self.assertIn("node.matches('details.course-topic')", source)
