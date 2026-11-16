@@ -1134,7 +1134,7 @@
     // hierarchy as two levels of native accordions.
     contentNodes=contentNodes.flatMap(node=>node.classList.contains('course-sheet')?[...node.children]:[node])
       .filter(node=>String(node.textContent||'').trim());
-    const sheets=[];let currentSheet=null,currentGroup=null;
+    const sheets=[];let currentSheet=null,currentGroup=null,workflowItem=null;
     const ensureSheet=title=>{
       if(!currentSheet){currentSheet={title:title||'Материалы продукта',groups:[]};sheets.push(currentSheet);}
       return currentSheet;
@@ -1147,12 +1147,12 @@
     contentNodes.forEach(node=>{
       const headingText=String(node.textContent||'').trim();
       if(node.matches('h3.course-section-heading')){
-        currentSheet={title:headingText||'Материалы продукта',groups:[]};sheets.push(currentSheet);currentGroup=null;
+        currentSheet={title:headingText||'Материалы продукта',groups:[]};sheets.push(currentSheet);currentGroup=null;workflowItem=null;
         return;
       }
       if(node.matches('h3.course-sheet-title')){
         const sheet=ensureSheet();
-        currentGroup={title:headingText||'Материал',kind:sourceBlockKind(headingText),items:[]};sheet.groups.push(currentGroup);
+        currentGroup={title:headingText||'Материал',kind:sourceBlockKind(headingText),items:[]};sheet.groups.push(currentGroup);workflowItem=null;
         return;
       }
       if(node.matches('details.course-topic')){
@@ -1163,9 +1163,19 @@
       }
       if(isHeading(node)){
         const sheet=ensureSheet();
-        currentGroup={title:headingText||'Материал',kind:sourceBlockKind(headingText),items:[]};sheet.groups.push(currentGroup);
+        // Expert check-lists often put “Шаг N” in an H2 and the document
+        // groups beneath it in H3s. Keep those H3s inside that step so the
+        // detailed workflow does not silently lose its document-collection
+        // stage while the same facts remain available in their own blocks.
+        if(node.tagName==='H3'&&currentGroup?.kind==='workflow'){
+          workflowItem={title:headingText||'Материал',kind:'workflow',body:'',plain:false};
+          currentGroup.items.push(workflowItem);
+          return;
+        }
+        currentGroup={title:headingText||'Материал',kind:sourceBlockKind(headingText),items:[]};sheet.groups.push(currentGroup);workflowItem=null;
         return;
       }
+      if(workflowItem){workflowItem.body+=node.outerHTML;return;}
       ensureGroup().items.push({title:'Материал',kind:'overview',body:node.outerHTML,plain:true});
     });
     const allowed=allowedKinds instanceof Set?allowedKinds:new Set(allowedKinds||[]);
