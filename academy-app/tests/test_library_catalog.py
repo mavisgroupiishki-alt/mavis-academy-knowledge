@@ -229,7 +229,7 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn('class="passport-section passport-section--${group.kind}"', source)
         self.assertIn("contentNodes.flatMap(node=>node.classList.contains('course-sheet')", source)
         self.assertIn("node.matches('details.course-topic')", source)
-        self.assertIn("currentTarget.innerHTML=sourceConceptDocument(data,path)", source)
+        self.assertIn("mode==='full'?readableDocument(data,path,isReferenceMaterial(path)):sourceConceptDocument(data,path)", source)
         self.assertNotIn("isStaff(access?.role||state.role)?sourceConceptDocument", source)
         self.assertNotIn("Открыть полный первоисточник", source)
         self.assertIn("const PRODUCT_PRACTICE=", source)
@@ -239,6 +239,26 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn(".passport-section", styles)
         self.assertIn(".passport-topic", styles)
         self.assertIn(".passport-section--tools", styles)
+
+    def test_staff_product_tiles_are_source_grounded_and_technical_cards_are_simple(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("const TECHNICAL_COURSE_IDS=new Set", source)
+        self.assertIn("if(TECHNICAL_COURSE_IDS.has(course.id))return technicalReader(course);", source)
+        self.assertIn("const productReferenceSourcesFor=", source)
+        self.assertIn(".filter(path=>/^02 PRODUCTS\\//u.test(path)||isExpertSource(path))", source)
+        self.assertIn("const sourceConceptDocument=(data,path)=>sourceStructuredDocument", source)
+        self.assertIn("const sourceOtherDocument=(data,path)=>sourceStructuredDocument", source)
+        self.assertIn("mode==='full'?readableDocument(data,path,isReferenceMaterial(path)):sourceConceptDocument(data,path)", source)
+
+    def test_staff_reference_lists_accept_headed_checklists_as_well_as_sheet_rows(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("function headingReferenceEntries(data,path,kind)", source)
+        self.assertIn("const headingEntries=headingReferenceEntries(data,path,kind);", source)
+        self.assertIn("entry.markdown?markdown(entry.content):richText(entry.content)", source)
+        self.assertIn("Загружаю специалистов из первоисточников", source)
+        self.assertIn("Загружаю инструменты и СИ из первоисточников", source)
 
     def test_metal_and_sro_have_role_checklists_with_complete_reference_lists(self):
         project = server.ROOT.parent
@@ -266,8 +286,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Лист: Ход работы эксперта", metal)
         self.assertIn("Национальный реестр специалистов НОСТРОЙ", sro)
         self.assertIn("Лист: Ход работы эксперта", sro)
-        self.assertIn("staticReferences:true", source)
-        self.assertIn("Открыть перечень инструментов и СИ", source)
+        self.assertIn("const productReferenceSourcesFor=", source)
+        self.assertIn("Загружаю инструменты и СИ из первоисточников", source)
 
     def test_staff_reader_uses_role_specific_workspaces(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")

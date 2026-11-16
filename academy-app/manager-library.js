@@ -507,6 +507,9 @@
   };
   const isManagerSource=path=>/^03 SALES\//u.test(path);
   const isExpertSource=path=>/^04 EXPERT\//u.test(path)||/^09 SOP\/(?:Регламент — подбор специалистов|Процесс — подбор специалиста|Инструкция — подбор специалистов в Bitrix24|Регламент — работа с актами выполненных работ|Регламент — передача сделок из продаж в экспертный отдел)/u.test(path);
+  // These cards are directories or collections.  They deliberately do not
+  // inherit the five-part product template.
+  const TECHNICAL_COURSE_IDS=new Set(['contacts','cases','sales','bitrix','processes','expert-flow','tool-rental','full-library']);
   const sourceIndexesForAudience=(course,audience=activeAudience())=>(course?.sources||[]).map((_,index)=>index).filter(index=>{
     const path=course.sources[index];
     return audience==='manager'?!isExpertSource(path):!isManagerSource(path);
@@ -993,6 +996,12 @@
     };
   }
   const passportSourcesFor=course=>(course?.sources||[]).filter(isReferenceMaterial);
+  const productReferenceSourcesFor=(course,audience=activeAudience())=>sourceIndexesForAudience(course,audience)
+    .map(index=>course.sources[index])
+    // Product passports and role check-lists are authoritative for people
+    // and measuring instruments.  Sales scripts are not used as a substitute
+    // for a technical list.
+    .filter(path=>/^02 PRODUCTS\//u.test(path)||isExpertSource(path));
   function expertWorkflowFromPassport(data){
     const raw=String(data?.content||'');
     if(!raw)return '';
@@ -1093,7 +1102,7 @@
     });
     return passportSheetsDocument(documentTitle,sheets)||safeRichHtml(content||'');
   }
-  function sourceConceptDocument(data,path){
+  function sourceStructuredDocument(data,path,allowedKinds){
     const full=readableDocument(data,path,isReferenceMaterial(path));
     const root=document.createElement('div');root.innerHTML=full;
     let nodes=[...root.children].filter(node=>String(node.textContent||'').trim());
@@ -1150,8 +1159,12 @@
       }
       ensureGroup().items.push({title:'Материал',kind:'overview',body:node.outerHTML,plain:true});
     });
-    return passportSheetsDocument(documentTitle,sheets)||full;
+    const allowed=allowedKinds instanceof Set?allowedKinds:new Set(allowedKinds||[]);
+    const filtered=sheets.map(sheet=>({...sheet,groups:sheet.groups.filter(group=>allowed.has(group.kind))})).filter(sheet=>sheet.groups.length);
+    return passportSheetsDocument(documentTitle,filtered)||'';
   }
+  const sourceConceptDocument=(data,path)=>sourceStructuredDocument(data,path,new Set(['overview']));
+  const sourceOtherDocument=(data,path)=>sourceStructuredDocument(data,path,new Set(['important','reference']));
   async function loadManagerDetailedWorkflow(){
     const course=current(),target=document.getElementById('manager-detailed-flow');
     if(!target||activeAudience()!=='manager'||!course||!access)return;
@@ -1172,6 +1185,27 @@
     people:/(?:требован(?:ия)?\s+по\s+штату|специалист|штат|персонал|кадр|работник|итр\b|руководител|директор|прораб|мастер|главн(?:ый|ого) инженер|образован|квалификац|разряд|стаж)/i,
     tools:/(?:средств(?:а)?\s+измерен|\bси\b|инструмент|оборудован|прибор|поверк|калибров|метролог)/i,
   };
+  function headingReferenceEntries(data,path,kind){
+    const raw=String(data?.content||'').replace(/^---[\s\S]*?---\s*/,'');
+    if(!raw)return [];
+    const entries=[];
+    const lines=raw.split(/\r?\n/);
+    let current=null;
+    const flush=()=>{
+      if(!current||current.kind!==kind)return;
+      const content=current.lines.join('\n').trim();
+      if(content)entries.push({label:current.title,content,markdown:true,path,sheet:'Раздел источника'});
+    };
+    lines.forEach(line=>{
+      const match=/^(#{2,4})\s+(.+)$/.exec(line.trim());
+      if(match){
+        flush();
+        current={title:cleanSourceLine(match[2]),kind:sourceBlockKind(match[2]),lines:[]};
+      }else if(current){current.lines.push(line);}
+    });
+    flush();
+    return entries;
+  }
   function passportSheet(raw,name){
     const source=String(raw||'');
     const escaped=String(name).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -1207,17 +1241,24 @@
     const matcher=productReferenceMatchers[kind];
     const entries=passportRows(data?.content,kind);
     const labelled=entries.filter(item=>matcher.test(item.label));
-    return (labelled.length?labelled:entries.filter(item=>matcher.test(`${item.label}\n${item.content}`))).map(item=>({...item,path}));
+    const tableEntries=(labelled.length?labelled:entries.filter(item=>matcher.test(`${item.label}\n${item.content}`))).map(item=>({...item,path}));
+    const headingEntries=headingReferenceEntries(data,path,kind);
+    const unique=new Map();
+    [...tableEntries,...headingEntries].forEach(item=>{
+      const key=`${item.path}|${item.label}|${item.content}`.slice(0,900);
+      if(!unique.has(key))unique.set(key,item);
+    });
+    return [...unique.values()];
   }
   function productReferenceDetails(kind,entries){
     const heading=kind==='people'?'специалистов':'инструментов и СИ';
     if(!entries.length)return `<p class="workspace-empty">В подключённых паспортах этой темы не найден отдельный перечень ${heading}. Добавьте его в паспорт продукта или в собственный материал плитки.</p>`;
-    return `<p class="workspace-source-attribution">Перечни приведены из паспортов продукта. Откройте нужный блок: состав зависит от выбранного направления и работ клиента.</p><div class="workspace-reference-list">${entries.map(entry=>`<details class="workspace-reference-item"><summary><span>${esc(entry.label)}</span><small>${esc(entry.sheet)} · ${esc(sourceTitle(entry.path))}</small></summary><div class="workspace-reference-body">${richText(entry.content)}</div></details>`).join('')}</div>`;
+    return `<p class="workspace-source-attribution">Перечни приведены из первоисточников продукта. Откройте нужный блок: состав зависит от выбранного направления и работ клиента.</p><div class="workspace-reference-list">${entries.map(entry=>`<details class="workspace-reference-item"><summary><span>${esc(entry.label)}</span><small>${esc(entry.sheet)} · ${esc(sourceTitle(entry.path))}</small></summary><div class="workspace-reference-body">${entry.markdown?markdown(entry.content):richText(entry.content)}</div></details>`).join('')}</div>`;
   }
   async function loadProductReferenceLists(){
     const course=current(),peopleTarget=document.getElementById('workspace-product-people'),toolsTarget=document.getElementById('workspace-product-tools');
     if(!course||!access||(!peopleTarget&&!toolsTarget))return;
-    const paths=passportSourcesFor(course);
+    const paths=productReferenceSourcesFor(course);
     if(!paths.length)return;
     const requestId=(state.productReferenceRequestId||0)+1;state.productReferenceRequestId=requestId;
     const isCurrent=()=>state.productReferenceRequestId===requestId&&state.page==='course'&&state.course===course.id;
@@ -1237,6 +1278,21 @@
       if(peopleTarget)peopleTarget.innerHTML=message;
       if(toolsTarget)toolsTarget.innerHTML=message;
     }
+  }
+  async function loadProductOtherDetails(){
+    const course=current(),target=document.getElementById('workspace-source-other'),selected=selectedSourceFor(course);
+    if(!course||!target||!selected.path||!access)return;
+    const requestId=(state.productOtherRequestId||0)+1;state.productOtherRequestId=requestId;
+    const isCurrent=()=>state.productOtherRequestId===requestId&&state.page==='course'&&state.course===course.id&&state.tab===selected.index;
+    try{
+      const response=await fetch(courseDocumentUrl(course,selected.path),{headers:authHeaders()});
+      if(!response.ok)throw new Error('source_unavailable');
+      const content=sourceOtherDocument(await response.json(),selected.path);
+      if(!isCurrent())return;
+      const block=target.closest('.workspace-block');
+      if(!content){if(block)block.hidden=true;return;}
+      target.innerHTML=`<p class="workspace-source-label">Из первоисточника: ${esc(sourceTitle(selected.path))}</p>${content}`;
+    }catch(_){if(isCurrent())target.closest('.workspace-block')?.setAttribute('hidden','');}
   }
   function traineeAssignmentPanel(course){
     const assignment=course.assignment;if(!assignment)return '';
@@ -1276,21 +1332,30 @@
   function casesReader(course){
     return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>${esc(course.eyebrow)}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1><p>${esc(course.lead)}</p></div><div class="reader-actions"><button class="reader-edit" type="button" onclick="academyAsk()">✦ Сгенерировать ещё кейс</button><button class="reader-edit" type="button" onclick="academyCopyLink('${course.id}')">Скопировать ссылку</button></div></header><article class="case-library-reader">${safeRichHtml(course.content)}</article>`);
   }
+  function technicalReader(course){
+    const indexes=sourceIndexesForAudience(course),selected=selectedSourceFor(course),path=selected.path,completed=done(course),inlineEditing=canEditBase()&&state.inlineEditorPath===path;
+    const sourceButtons=indexes.map(index=>`<button type="button" class="${index===selected.index?'active':''}" aria-current="${index===selected.index?'page':'false'}" onclick="academySource(${index})"><span>${String(index+1).padStart(2,'0')}</span><b>${esc(sourceTitle(course.sources[index]))}</b></button>`).join('');
+    const documentPane=path?(inlineEditing?inlineMaterialEditor(course,path):`<div id="course-document" data-document-mode="full" class="course-document"><div class="course-loading"><b>Открываю материал…</b><span>Загружаю первоисточник.</span></div></div>`):'<p class="workspace-empty">К этой плитке пока не подключён источник.</p>';
+    const editAction=canEditBase()&&path?`<button class="reader-edit" onclick="academyEditOpenedMaterial()">✎ Редактировать текст</button>`:'';
+    return shell(`<button class="course-back" onclick="academyCatalog()">← К плиткам</button><header class="reader-head"><div><span>${esc(course.eyebrow||'РАБОЧИЙ МАТЕРИАЛ')}</span><h1><i>${course.icon}</i>${esc(course.title)}</h1><p>${esc(course.lead||'')}</p></div><div class="reader-actions">${editAction}<button class="reader-complete ${completed?'is-done':''}" onclick="academyComplete('${course.id}')">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header><section class="reader-layout"><aside class="reader-outline"><b>Материалы плитки</b>${sourceButtons}</aside><article class="reader-content technical-reader-content">${documentPane}</article></section>`);
+  }
   function reader(){
     const course=current();if(!course)return catalog();
     const role=access?.role||state.role,trainee=isTraineeWorkspace();
     if(trainee)return readerTraineeLegacy(course);
     if(course.id==='contacts')return contactsReader(course);
     if(course.id==='cases')return casesReader(course);
+    if(TECHNICAL_COURSE_IDS.has(course.id))return technicalReader(course);
     const audience=activeAudience(),workspace=workspaceFor(course,audience),indexes=sourceIndexesForAudience(course,audience),selected=selectedSourceFor(course),path=selected.path,completed=done(course),inlineEditing=canEditBase()&&state.inlineEditorPath===path;
     const sourceButtons=indexes.map(index=>`<button type="button" class="${index===selected.index?'active':''}" aria-current="${index===selected.index?'page':'false'}" onclick="academySource(${index})"><span>${String(index+1).padStart(2,'0')}</span><b>${esc(sourceTitle(course.sources[index]))}</b></button>`).join('');
     const list=items=>`<ul>${items.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`;
-    const hasProductReferences=passportSourcesFor(course).length>0;
+    const referencePaths=productReferenceSourcesFor(course,audience);
+    const hasProductReferences=referencePaths.length>0;
     // The source document is the concept block itself.  Previously this
     // screen first showed an abbreviated text written in the UI and only
     // afterwards the actual document.  That made the route look generic and
     // could contradict the source.  Staff now reads the primary source first.
-    const sourcePane=path?(inlineEditing?inlineMaterialEditor(course,path):`<div class="workspace-primary-source" id="workspace-source"><p class="workspace-source-label">Первоисточник: ${esc(sourceTitle(path))}</p><div id="course-document" class="course-document"><div class="course-loading"><b>Открываю первоисточник…</b><span>Загружаю текст, таблицы и чек-листы.</span></div></div></div>`):'';
+    const sourcePane=path?(inlineEditing?inlineMaterialEditor(course,path):`<div class="workspace-primary-source" id="workspace-source"><p class="workspace-source-label">Первоисточник: ${esc(sourceTitle(path))}</p><div id="course-document" data-document-mode="concept" class="course-document"><div class="course-loading"><b>Открываю раздел «Понятие»…</b><span>Показываю только смысл услуги из первоисточника.</span></div></div></div>`):'';
     const editAction=canEditBase()?`<button class="reader-edit" onclick="academyEditOpenedMaterial()" ${path?'':'disabled'}>✎ Редактировать текст</button><button class="reader-edit" onclick="academyEditTile('${course.id}')">⊕ Материалы плитки</button>`:'';
     const authored=course.content?`<section class="workspace-source custom-tile-document">${safeRichHtml(course.content)}</section>`:'';
     const detailedManagerFlow=audience==='manager'?`<section class="workspace-source expert-passport-workflow" id="workspace-flow"><div><h2>Ход работы</h2><p>Полный рабочий регламент менеджера: последовательность действий, скрипты, таблицы и контрольные точки.</p></div><div id="manager-detailed-flow" class="expert-passport-flow"><div class="course-loading"><b>Загружаю ход работы…</b><span>Откроется единый подробный материал.</span></div></div></section>`:'';
@@ -1299,10 +1364,11 @@
     const section=(id,title,body)=>body?`<section class="workspace-block" id="${id}"><h2>${title}</h2>${body}</section>`:'';
     // “Другое” only contains a real attachment or text explicitly added to
     // this tile.  Do not fill it with generic sales/expert advice.
-    const otherContent=`${tileAttachmentsReader(course)}${authored}`;
+    const sourceOther=path&&!inlineEditing?`<div id="workspace-source-other" class="workspace-source-other"><div class="course-loading"><b>Загружаю дополнительные условия…</b></div></div>`:'';
+    const otherContent=`${sourceOther}${tileAttachmentsReader(course)}${authored}`;
     const workspaceDetails=(label,items)=>items.length?`<details class="workspace-reference-item" open><summary><span>${esc(label)}</span><small>Чек-лист продукта</small></summary><div class="workspace-reference-body">${list(items)}</div></details>`:'';
-    const productPeople=workspace.staticReferences&&workspace.people.length?workspaceDetails('Открыть перечень специалистов',workspace.people):(hasProductReferences?'<div id="workspace-product-people"><div class="course-loading"><b>Загружаю специалистов из паспортов продукта…</b></div></div>':'');
-    const productTools=workspace.staticReferences&&workspace.tools.length?workspaceDetails('Открыть перечень инструментов и СИ',workspace.tools):(hasProductReferences?'<div id="workspace-product-tools"><div class="course-loading"><b>Загружаю инструменты и СИ из паспортов продукта…</b></div></div>':'');
+    const productPeople=hasProductReferences?'<div id="workspace-product-people"><div class="course-loading"><b>Загружаю специалистов из первоисточников…</b></div></div>':'';
+    const productTools=hasProductReferences?'<div id="workspace-product-tools"><div class="course-loading"><b>Загружаю инструменты и СИ из первоисточников…</b></div></div>':'';
     const peopleContent=productPeople||noItems;
     const toolsContent=productTools||noItems;
     const conceptContent=sourcePane||noItems;
@@ -1322,7 +1388,7 @@
   const editableSources=()=>[...new Set([...baseLibraryCourses().flatMap(course=>course.sources),...FULL_LIBRARY_EXTRA_SOURCES,...state.librarySourcePaths])];
   function sourceEditor(){const paths=editableSources(),path=state.sourceEditorPath||paths[0]||'';return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results curriculum-editor"><span>РУКОВОДИТЕЛЬ · РЕДАКТОР БАЗЫ ЗНАНИЙ</span><h1>Редактор материалов</h1><p>Ниже — исходные материалы, а не плитки каталога. Ищите по названию и открывайте нужный документ: поле не перерисовывается при наборе, поэтому курсор остаётся на месте.</p><label>Найти материал<input class="academy-source-search" placeholder="Например: МЧС, металл, договор…" oninput="academyFilterSourceEditor(this)"></label><div class="academy-source-picker" aria-label="Исходные материалы">${paths.map(item=>`<button type="button" data-source-picker="${esc((sourceTitle(item)+' '+item).toLocaleLowerCase('ru'))}" class="${item===path?'active':''}" onclick="academySelectSourceEditor('${esc(item)}')"><small>${esc(item.split('/')[0])}</small><b>${esc(sourceTitle(item))}</b></button>`).join('')}</div><div class="rich-editor-toolbar" aria-label="Форматирование текста"><button type="button" onmousedown="event.preventDefault();academyFormatText('bold')"><b>Ж</b></button><button type="button" onmousedown="event.preventDefault();academyFormatText('italic')"><i>К</i></button><button type="button" onmousedown="event.preventDefault();academyFormatText('underline')"><u>Ч</u></button><button type="button" onmousedown="event.preventDefault();academyFormatText('insertUnorderedList')">• Список</button><button type="button" onmousedown="event.preventDefault();academyFormatText('formatBlock','h3')">Заголовок</button><input aria-label="Цвет выделенного текста" type="color" value="#087f76" oninput="academyFormatText('foreColor',this.value)"></div><div id="source-rich-editor" class="rich-editor source-rich-editor" contenteditable="true">${state.sourceEditorLoading?'<p>Загружаю материал…</p>':safeRichHtml(state.sourceEditorHtml)}</div><div class="editor-actions"><button class="reader-test" ${state.sourceEditorSaving||state.sourceEditorLoading?'disabled':''} onclick="academySaveSourceEditor()">${state.sourceEditorSaving?'Сохраняю…':'Сохранить материал'}</button></div>${state.sourceEditorError?`<p class="exam-error">${esc(state.sourceEditorError)}</p>`:''}</section>`)}
   function bindLibraryAutosave(){const editor=document.querySelector('.curriculum-editor');if(!editor)return;const queue=event=>{if(event.target?.matches('[data-library-field]'))window.academyQueueLibrarySave();};editor.oninput=queue;editor.onchange=queue;}
-  function render() { if (!access) { state.login=true; el.innerHTML=loginLanding(); return; } state.login=false; el.innerHTML = state.page === 'course' ? reader() : state.page === 'presentation' ? presentation() : state.page === 'exam' ? finalExam() : state.page === 'test-hub' ? testHub() : state.page === 'leader-results' ? leaderResults() : state.page === 'trainee-profile' ? traineeProfile() : state.page === 'curriculum-editor' ? curriculumEditor() : state.page === 'library-editor' ? libraryEditor() : state.page === 'source-editor' ? sourceEditor() : state.page === 'governance' ? governance() : catalog(); if (state.page==='library-editor') bindLibraryAutosave(); if (state.page==='leader-results') injectLeaderOperationalPanel(); if (state.page==='course'){loadDocument();loadManagerDetailedWorkflow();loadExpertPassportWorkflow();loadProductReferenceLists();} if (state.page==='presentation') loadPresentationDocument(); }
+  function render() { if (!access) { state.login=true; el.innerHTML=loginLanding(); return; } state.login=false; el.innerHTML = state.page === 'course' ? reader() : state.page === 'presentation' ? presentation() : state.page === 'exam' ? finalExam() : state.page === 'test-hub' ? testHub() : state.page === 'leader-results' ? leaderResults() : state.page === 'trainee-profile' ? traineeProfile() : state.page === 'curriculum-editor' ? curriculumEditor() : state.page === 'library-editor' ? libraryEditor() : state.page === 'source-editor' ? sourceEditor() : state.page === 'governance' ? governance() : catalog(); if (state.page==='library-editor') bindLibraryAutosave(); if (state.page==='leader-results') injectLeaderOperationalPanel(); if (state.page==='course'){loadDocument();loadManagerDetailedWorkflow();loadExpertPassportWorkflow();loadProductReferenceLists();loadProductOtherDetails();} if (state.page==='presentation') loadPresentationDocument(); }
   async function academySaveError(response,fallback){const body=await response.json().catch(()=>({}));if(body.error==='persistent_storage_not_configured')return 'Постоянное хранилище ещё не подключено: материал не сохранён.';if(body.error==='persistent_storage_unavailable')return 'Постоянное хранилище временно недоступно: материал не сохранён. Повторите позже.';return fallback;}
   window.academyEditOpenedMaterial=()=>{if(!canEditBase())return;const course=current(),{path}=selectedSourceFor(course);if(!path)return;state.inlineEditorPath=path;state.inlineEditorHtml='';state.inlineEditorError='';academyLoadInlineMaterial();render();};
   window.academyCloseInlineEditor=()=>{state.inlineEditorPath='';state.inlineEditorHtml='';state.inlineEditorError='';state.inlineEditorLoading=false;state.inlineEditorSaving=false;render();};
@@ -1335,7 +1401,7 @@
     const target=document.getElementById('course-document'); if (!target) return;
     if(course.content&&!(course.sources||[]).length){target.innerHTML=safeRichHtml(course.content);return;}
     const isCurrent=()=>requestId===state.documentRequestId&&state.page==='course'&&state.course===course.id&&state.tab===index;
-    try { const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()}); if(response.status===401){ state.login=true; access=null; sessionStorage.removeItem(accessKey); return render(); } if(!response.ok) throw Error(`Код ${response.status}`); const data=await response.json(); if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) { currentTarget.innerHTML=sourceConceptDocument(data,path); if(canEditBase()&&isTraineeWorkspace()&&state.traineeTileEditing){currentTarget.contentEditable='true';currentTarget.classList.add('trainee-live-source-edit');currentTarget.addEventListener('input',()=>window.academyLiveTraineeDocument(currentTarget.innerHTML));} } } }
+    try { const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()}); if(response.status===401){ state.login=true; access=null; sessionStorage.removeItem(accessKey); return render(); } if(!response.ok) throw Error(`Код ${response.status}`); const data=await response.json(); if(isCurrent()) { const currentTarget=document.getElementById('course-document'); if(currentTarget) { const mode=currentTarget.dataset.documentMode||'concept'; currentTarget.innerHTML=mode==='full'?readableDocument(data,path,isReferenceMaterial(path)):sourceConceptDocument(data,path); if(!currentTarget.innerHTML.trim()&&mode==='concept')currentTarget.innerHTML='<p class="workspace-empty">В выбранном источнике нет отдельного описания услуги. Откройте другой первоисточник в списке ниже.</p>'; if(canEditBase()&&isTraineeWorkspace()&&state.traineeTileEditing){currentTarget.contentEditable='true';currentTarget.classList.add('trainee-live-source-edit');currentTarget.addEventListener('input',()=>window.academyLiveTraineeDocument(currentTarget.innerHTML));} } } }
     catch (error) { if(isCurrent()) { const currentTarget=document.getElementById('course-document'), fallback=String(course.fallbackContent||'').trim(), fallbackHtml=fallback?(fallback.includes('<')?safeRichHtml(fallback):markdown(fallback)):''; if(currentTarget) currentTarget.innerHTML=`<div class="course-error"><b>Материал временно недоступен.</b><span>Раздел «${esc(sourceTitle(path))}»: ${esc(error.message||'неизвестная ошибка')}. Попробуйте загрузить ещё раз.</span><button onclick="academyReloadCourse()">Загрузить снова</button></div>${fallbackHtml?`<section class="course-document course-fallback"><h3>Краткий резервный материал</h3>${fallbackHtml}</section>`:''}`; } }
   }
   async function loadPresentationDocument() {
