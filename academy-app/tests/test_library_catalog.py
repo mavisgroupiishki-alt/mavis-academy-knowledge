@@ -227,6 +227,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn('class="source-block source-block--${block.kind}"', source)
         self.assertIn("contentNodes[0].classList.contains('course-sheet')", source)
         self.assertIn("node.matches('details.course-topic')", source)
+        self.assertIn("currentTarget.innerHTML=sourceConceptDocument(data,path)", source)
+        self.assertNotIn("isStaff(access?.role||state.role)?sourceConceptDocument", source)
         self.assertNotIn("Открыть полный первоисточник", source)
         self.assertIn("const PRODUCT_PRACTICE=", source)
         for product in ("spk", "attestation", "'iso-suot'"):
