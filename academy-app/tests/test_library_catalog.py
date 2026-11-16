@@ -524,6 +524,13 @@ console.log(JSON.stringify({missing,coverage}));
 
 
 class KnowledgeAssistantRetrievalTests(unittest.TestCase):
+    def test_trainee_assistant_uses_full_corpus_without_expanding_direct_document_access(self):
+        source = (server.ROOT / "server.py").read_text(encoding="utf-8")
+
+        self.assertIn('if role not in ACCESS_ROLES:', source)
+        self.assertIn('sources = select_knowledge_sources(question, knowledge_paths())', source)
+        self.assertIn('Direct source opening remains protected by document_access_for.', source)
+
     def test_short_product_abbreviations_are_kept_in_assistant_queries(self):
         self.assertIn("си", server.normalize_terms("перечень СИ для СПК"))
         self.assertIn("спк", server.normalize_terms("как подать заявление для СПК"))
@@ -732,6 +739,25 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(payload, {"value": {"custom": []}})
         self.assertEqual(captured["url"], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
         self.assertNotIn("server-only-token", captured["url"])
+
+    def test_cloudflare_state_config_accepts_the_worker_secret_name_on_render(self):
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_TOKEN": "worker-secret",
+        }, clear=True):
+            backend, url, _, token = server.persistent_state_config()
+
+        self.assertEqual(backend, "cloudflare")
+        self.assertEqual(url, "https://mavis-academy-state.example.workers.dev")
+        self.assertEqual(token, "worker-secret")
+
+    def test_persistent_write_rejects_a_success_response_without_the_saved_value(self):
+        with patch.object(server, "persistent_state_config", return_value=("supabase", "https://example", "key", "token")), patch.object(
+            server, "persistent_state_request", return_value={"saved": True}
+        ):
+            with self.assertRaisesRegex(OSError, "write_unconfirmed"):
+                server.write_persistent_state("library_catalog", {"custom": []})
 
     def test_cloudflare_state_request_uses_header_token_and_does_not_expose_it_in_url(self):
         captured = {}

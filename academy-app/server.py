@@ -451,7 +451,14 @@ def persistent_state_config():
     browser never receives the token used to read or write editor state.
     """
     backend = os.getenv("ACADEMY_STATE_BACKEND", "supabase").lower()
-    access_token = os.getenv("ACADEMY_STATE_WRITE_TOKEN", os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", ""))
+    # The Worker secret is named ACADEMY_STATE_TOKEN. Earlier Academy
+    # releases documented its Render counterpart as ACADEMY_STATE_WRITE_TOKEN,
+    # so accept both names while the service configuration is being migrated.
+    access_token = (
+        os.getenv("ACADEMY_STATE_WRITE_TOKEN")
+        or os.getenv("ACADEMY_STATE_TOKEN")
+        or os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", "")
+    )
     if backend == "cloudflare":
         url = os.getenv("ACADEMY_STATE_URL", "").rstrip("/")
         return (backend, url, None, access_token) if url and access_token else (None, None, None, None)
@@ -621,16 +628,23 @@ def write_persistent_state(name, value):
             auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
             envelope[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY] = auxiliary if isinstance(auxiliary, dict) else {}
             envelope[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY][name] = value
-            persistent_state_request("POST", PERSISTENT_STATE_KEYS["curriculum"], envelope)
+            saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS["curriculum"], envelope)
+            expected = envelope
         elif backend == "cloudflare" and name == "curriculum":
             previous = cloudflare_curriculum_auxiliary_envelope()
             auxiliary = previous.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY)
             payload = dict(value) if isinstance(value, dict) else value
             if isinstance(payload, dict) and isinstance(auxiliary, dict):
                 payload[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY] = auxiliary
-            persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], payload)
+            saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], payload)
+            expected = payload
         else:
-            persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], value)
+            saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], value)
+            expected = value
+        # A 2xx response without the value is not proof that the remote store
+        # accepted the edit. Refuse to display a false success message.
+        if not isinstance(saved, dict) or saved.get("value") != expected:
+            raise OSError("persistent_state_write_unconfirmed")
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
         return True
     if not allow_local_state():
@@ -1651,8 +1665,8 @@ class Handler(SimpleHTTPRequestHandler):
             role = access_role_from_header(self.headers)
             if not role:
                 return self.respond_json({"error": "auth_required", "message": "Войдите в Academy, чтобы задать вопрос помощнику."}, 401)
-            if role not in {"manager", "expert", "leader"}:
-                return self.respond_json({"error": "forbidden", "message": "Помощник доступен в рабочей базе после входа сотрудника."}, 403)
+            if role not in ACCESS_ROLES:
+                return self.respond_json({"error": "forbidden", "message": "Не удалось определить роль пользователя."}, 403)
             length = int(self.headers.get("Content-Length", "0"))
             if length < 2 or length > 9000:
                 return self.respond_json({"error": "invalid_size"}, 413)
@@ -1670,7 +1684,9 @@ class Handler(SimpleHTTPRequestHandler):
                     if text:
                         history.append({"role": item["role"], "text": text})
             stage = "knowledge_source"
-            sources = select_knowledge_sources(question, accessible_paths_for(role))
+            # The assistant may answer any question for every signed-in role.
+            # Direct source opening remains protected by document_access_for.
+            sources = select_knowledge_sources(question, knowledge_paths())
             if not sources:
                 return self.respond_json({"mode": "unavailable", "message": "Не удалось получить материалы базы знаний"}, 503)
             token = os.getenv("ACADEMY_AI_TOKEN", "")
@@ -1694,7 +1710,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "Для рабочих вопросов назови практический следующий шаг; явно пометь неподтверждённые сведения."
             )
             conversation = "\n".join(
-                ("МЕНЕДЖЕР: " if item["role"] == "user" else "ПОМОЩНИК: ") + item["text"]
+                ("ПОЛЬЗОВАТЕЛЬ: " if item["role"] == "user" else "ПОМОЩНИК: ") + item["text"]
                 for item in history
             )
             prompt = (
