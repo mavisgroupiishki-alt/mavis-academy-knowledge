@@ -7,6 +7,7 @@ const ALLOWED_KEYS = new Set([
   "academy:material-metadata",
   "academy:revisions",
   "academy:events",
+  "academy:trainee-progress",
 ]);
 
 const json = (value, status = 200) => new Response(JSON.stringify(value), {

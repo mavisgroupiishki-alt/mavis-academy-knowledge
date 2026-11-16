@@ -58,6 +58,7 @@ PERSISTENT_STATE_KEYS = {
     "material_metadata": "academy:material-metadata",
     "revisions": "academy:revisions",
     "academy_events": "academy:events",
+    "trainee_progress": "academy:trainee-progress",
 }
 CURRENT_TRAINEE_PLAN_VERSION = "trainee-sheets-2026-11-13.1"
 CURRICULUM_STORE = ROOT / "data" / "trainee-curriculum.json"
@@ -69,6 +70,7 @@ TRAINEE_REGISTRY_STORE = ROOT / "data" / "trainee-registry.json"
 MATERIAL_METADATA_STORE = ROOT / "data" / "material-metadata.json"
 REVISIONS_STORE = ROOT / "data" / "academy-revisions.json"
 ACADEMY_EVENTS_STORE = ROOT / "data" / "academy-events.json"
+TRAINEE_PROGRESS_STORE = ROOT / "data" / "academy-trainee-progress.json"
 PERSISTENT_STATE_CACHE = {}
 # The live Worker only accepts the original curriculum key.  Every other
 # durable Academy state, including document edits and catalogue edits, must
@@ -758,6 +760,24 @@ def safe_attempt_result(result):
     return safe
 
 
+def safe_trainee_progress(value):
+    """Keep only completion flags for a trainee's own published lessons."""
+    if not isinstance(value, dict) or len(value) > 240:
+        raise ValueError("invalid_progress")
+    cleaned = {}
+    for key, item in value.items():
+        name = str(key)
+        if not re.fullmatch(r"(?:lesson:)?tr-[a-z0-9-]{2,80}(?::\d{1,3})?", name):
+            continue
+        if not isinstance(item, dict) or not isinstance(item.get("done"), bool):
+            continue
+        cleaned[name] = {
+            "done": item["done"],
+            "at": str(item.get("at", ""))[:40],
+        }
+    return cleaned
+
+
 def is_safe_rich_text(value):
     """Reject executable markup from the leader's visual editor.
 
@@ -1162,6 +1182,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.ask_knowledge()
         if self.path == "/api/academy/attempts":
             return self.save_academy_attempt()
+        if self.path == "/api/academy/trainee-progress":
+            return self.save_trainee_progress()
         if self.path != "/api/ai/grade":
             return self.respond_json({"error": "not_found"}, 404)
         try:
@@ -1267,6 +1289,57 @@ class Handler(SimpleHTTPRequestHandler):
             payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
             payload["storage"] = "server_fallback"
             return self.respond_json(payload)
+
+    def trainee_profile(self):
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] != "trainee":
+            return self.respond_json({"error": "forbidden"}, 403)
+        candidate_name = access["name"]
+        progress = {}
+        try:
+            progress_state = read_auxiliary_state("trainee_progress", TRAINEE_PROGRESS_STORE, {"items": {}})
+            progress_items = progress_state.get("items", {}) if isinstance(progress_state, dict) else {}
+            progress = progress_items.get(candidate_name.casefold(), {}).get("progress", {}) if isinstance(progress_items, dict) else {}
+            _, _, write_token = results_store_config()
+            rows = results_request("POST", "rpc/academy_list_attempts", {"p_access_token": write_token})
+            storage = "primary"
+        except ValueError:
+            rows = read_fallback_results().get("results", [])
+            progress = progress if isinstance(progress, dict) else {}
+            storage = "server_fallback"
+        except (URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            rows = read_fallback_results().get("results", [])
+            progress = progress if isinstance(progress, dict) else {}
+            storage = "server_fallback"
+        rows = [row for row in (rows if isinstance(rows, list) else []) if str(row.get("candidate_name", "")).casefold() == candidate_name.casefold()][-100:]
+        try:
+            submissions_state = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+            submissions = [row for row in submissions_state.get("items", []) if str(row.get("candidate_name", "")).casefold() == candidate_name.casefold()][-100:]
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            submissions = []
+        return self.respond_json({"progress": progress if isinstance(progress, dict) else {}, "results": rows, "submissions": submissions, "storage": storage})
+
+    def save_trainee_progress(self):
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] != "trainee":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > 24000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            progress = safe_trainee_progress(payload.get("progress", {}))
+            state = read_auxiliary_state("trainee_progress", TRAINEE_PROGRESS_STORE, {"items": {}})
+            items = state.get("items", {}) if isinstance(state, dict) else {}
+            if not isinstance(items, dict):
+                items = {}
+            items[access["name"].casefold()] = {"name": access["name"], "progress": progress, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+            write_auxiliary_state("trainee_progress", TRAINEE_PROGRESS_STORE, {"items": items})
+            return self.respond_json({"saved": True, "progress": progress})
+        except ValueError:
+            return self.respond_json({"error": "invalid_progress"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "results_unavailable"}, 503)
         except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
             fallback = read_fallback_results()
             payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
@@ -1775,6 +1848,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/academy/leader-results":
             return self.academy_leader_results()
+        if self.path == "/api/academy/trainee-profile":
+            return self.trainee_profile()
         if self.path.startswith("/api/academy/material-metadata"):
             if access_role_from_header(self.headers) not in STAFF_ROLES:
                 return self.respond_json({"error": "forbidden"}, 403)

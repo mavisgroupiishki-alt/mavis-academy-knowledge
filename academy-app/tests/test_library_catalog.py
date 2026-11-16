@@ -446,6 +446,38 @@ console.log(JSON.stringify({missing,coverage}));
         final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
         self.assertEqual(final_exam.count("{q:'"), 20)
 
+    def test_trainee_checks_use_real_multiple_choice_cases_not_study_yes_no_prompts(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("const TRAINEE_QUIZ_BANK", source)
+        self.assertIn("function traineeQuizModal()", source)
+        self.assertIn("Государственное предприятие «УКС Крупского района»", source)
+        self.assertIn("tr-sheet-d1-03", source)
+        self.assertNotIn("Проверка по теме «СПК»: материал плитки изучен?", source)
+        final_exam = source.split("function finalExam()", 1)[1].split("const visibleTraineeName", 1)[0]
+        self.assertNotIn("exam-written", final_exam)
+        self.assertIn("Выберите ответ на все", source)
+
+    def test_trainee_has_a_private_profile_and_server_side_progress_route(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+
+        self.assertIn("function traineeProfile()", source)
+        self.assertIn("academyTraineeProfile", source)
+        self.assertIn("/api/academy/trainee-profile", source)
+        self.assertIn("/api/academy/trainee-progress", source)
+        self.assertIn('"trainee_progress": "academy:trainee-progress"', backend)
+        self.assertIn("def trainee_profile(self):", backend)
+        self.assertIn("def save_trainee_progress(self):", backend)
+
+    def test_trainee_progress_keeps_only_safe_completion_flags(self):
+        cleaned = server.safe_trainee_progress({
+            "tr-sheet-d1-03": {"done": True, "at": "2026-11-16T10:00:00Z"},
+            "lesson:tr-sheet-d1-03:0": {"done": True, "at": "2026-11-16T10:00:00Z"},
+            "not-a-course": {"done": True},
+        })
+        self.assertEqual(set(cleaned), {"tr-sheet-d1-03", "lesson:tr-sheet-d1-03:0"})
+
     def test_trainee_day_one_keeps_video_general_information_and_seven_products(self):
         program = (server.ROOT / "generated" / "trainee-program.js").read_text(encoding="utf-8")
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
