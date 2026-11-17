@@ -474,6 +474,9 @@ def decode_persistent_value(value):
 
 def persistent_error_detail(exc):
     """Return a safe storage diagnostic without leaking a URL, token or data."""
+    worker_detail = getattr(exc, "academy_storage_detail", "")
+    if worker_detail:
+        return worker_detail
     if isinstance(exc, HTTPError):
         return f"http_{exc.code}"
     if isinstance(exc, URLError):
@@ -516,8 +519,17 @@ def persistent_state_request(method, key, value=None):
         payload = json.loads(raw.decode("utf-8")) if raw else {}
     except HTTPError as exc:
         # Do not include URLs, headers or response bodies: they can contain
-        # storage credentials. The status is enough for Render diagnostics.
-        print(f"Academy state store failed: cloudflare HTTP {exc.code}", flush=True)
+        # storage credentials. The Worker error code is a fixed safe enum.
+        detail = f"http_{exc.code}"
+        try:
+            worker_payload = json.loads(exc.read().decode("utf-8"))
+            worker_error = worker_payload.get("error") if isinstance(worker_payload, dict) else None
+            if worker_error in {"invalid_json", "invalid_value", "invalid_key", "unauthorized", "not_found", "method_not_allowed"}:
+                detail = f"worker_{worker_error}"
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            pass
+        exc.academy_storage_detail = detail
+        print(f"Academy state store failed: cloudflare {detail}", flush=True)
         raise
     if not isinstance(payload, dict):
         raise ValueError("invalid_state_response")
