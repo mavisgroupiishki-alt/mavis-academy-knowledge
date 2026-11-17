@@ -1237,6 +1237,28 @@ class PersistentStateTransportTests(unittest.TestCase):
             self.assertEqual(envelope[server.CLOUDFLARE_COMPATIBILITY_STATE_FIELD], server.CLOUDFLARE_COMPATIBILITY_STATE_MARKER)
             self.assertEqual(envelope["states"]["library_catalog"]["custom"], [])
 
+    def test_cloudflare_detects_shared_envelope_after_a_fresh_process_start(self):
+        curriculum = {"courses": [{"id": "day-1"}], "days": [], "planVersion": "test"}
+        stored = {
+            server.CLOUDFLARE_COMPATIBILITY_STATE_KEY: {
+                server.CLOUDFLARE_COMPATIBILITY_STATE_FIELD: server.CLOUDFLARE_COMPATIBILITY_STATE_MARKER,
+                "states": {"curriculum": curriculum, "library_catalog": {"hidden": [], "overrides": {}, "custom": [], "archived": []}},
+            }
+        }
+
+        def request(method, key, value=None):
+            self.assertEqual(method, "GET")
+            self.assertEqual(key, server.CLOUDFLARE_COMPATIBILITY_STATE_KEY)
+            return {"value": stored[key]}
+
+        with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://example", None, "token")), patch.object(
+            server, "persistent_state_request", side_effect=request
+        ), patch.object(server, "CLOUDFLARE_SHARED_STATE_ENABLED", False):
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertEqual(server.read_persistent_state("library_catalog")["custom"], [])
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertEqual(server.read_persistent_state("curriculum"), curriculum)
+
 
 if __name__ == "__main__":
     unittest.main()
