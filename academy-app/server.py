@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import threading
 import zlib
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -79,6 +80,11 @@ PERSISTENT_STATE_CACHE = {}
 PERSISTENT_STATE_COMPRESSION_MARKER = "_mavis_state_codec"
 PERSISTENT_STATE_COMPRESSION_VALUE = "zlib-json-v1"
 PERSISTENT_STATE_COMPRESSION_THRESHOLD = 48_000
+CLOUDFLARE_COMPATIBILITY_STATE_KEY = "academy:library-catalog"
+CLOUDFLARE_COMPATIBILITY_STATE_MARKER = "mavis-academy-shared-state-v2"
+CLOUDFLARE_COMPATIBILITY_STATE_FIELD = "_mavis_academy_shared_state"
+CLOUDFLARE_SHARED_STATE_LOCK = threading.RLock()
+CLOUDFLARE_SHARED_STATE_ENABLED = False
 # Older Worker deployments stored editor state inside the curriculum document.
 # The current Worker accepts every key in PERSISTENT_STATE_KEYS. Keeping state
 # in separate rows prevents two independent editor saves from overwriting one
@@ -488,6 +494,21 @@ def persistent_error_detail(exc):
     return type(exc).__name__.lower()
 
 
+def cloudflare_uses_shared_state():
+    return CLOUDFLARE_SHARED_STATE_ENABLED
+
+
+def enable_cloudflare_shared_state():
+    """Use the one production Worker key that has been confirmed writable.
+
+    Older Worker deployments may reject newly added per-feature keys.  The
+    fallback is activated only after that exact Worker response and keeps all
+    Academy state inside a versioned envelope under the existing catalog key.
+    """
+    global CLOUDFLARE_SHARED_STATE_ENABLED
+    CLOUDFLARE_SHARED_STATE_ENABLED = True
+
+
 def allow_local_state():
     # Local JSON is useful only for an explicitly configured development run.
     # In production, reporting a save failure is safer than silently losing an
@@ -567,6 +588,48 @@ def migrate_legacy_cloudflare_auxiliary_state(envelope=None):
             raise OSError("persistent_state_legacy_migration_unconfirmed")
 
 
+def cloudflare_shared_state_envelope():
+    """Read the compatibility envelope, preserving a pre-envelope catalogue."""
+    raw = persistent_state_request("GET", CLOUDFLARE_COMPATIBILITY_STATE_KEY)
+    value = decode_persistent_value(raw.get("value")) if isinstance(raw, dict) else None
+    if isinstance(value, dict) and value.get(CLOUDFLARE_COMPATIBILITY_STATE_FIELD) == CLOUDFLARE_COMPATIBILITY_STATE_MARKER:
+        states = value.get("states")
+        if isinstance(states, dict):
+            return {CLOUDFLARE_COMPATIBILITY_STATE_FIELD: CLOUDFLARE_COMPATIBILITY_STATE_MARKER, "states": states}
+    # The compatibility key was originally the standalone catalogue. Keep it
+    # intact as the first member when moving to a durable shared envelope.
+    states = {"library_catalog": value} if isinstance(value, dict) else {}
+    return {CLOUDFLARE_COMPATIBILITY_STATE_FIELD: CLOUDFLARE_COMPATIBILITY_STATE_MARKER, "states": states}
+
+
+def read_cloudflare_shared_state(name):
+    envelope = cloudflare_shared_state_envelope()
+    states = envelope.get("states", {})
+    return states.get(name) if isinstance(states, dict) else None
+
+
+def write_cloudflare_shared_state(name, value):
+    """Atomically preserve all Academy streams on an older Worker deployment."""
+    with CLOUDFLARE_SHARED_STATE_LOCK:
+        envelope = cloudflare_shared_state_envelope()
+        states = dict(envelope.get("states", {})) if isinstance(envelope.get("states"), dict) else {}
+        states[name] = value
+        saved_value = {
+            CLOUDFLARE_COMPATIBILITY_STATE_FIELD: CLOUDFLARE_COMPATIBILITY_STATE_MARKER,
+            "states": states,
+        }
+        encoded_value = encode_persistent_value(saved_value)
+        saved = persistent_state_request("POST", CLOUDFLARE_COMPATIBILITY_STATE_KEY, encoded_value)
+        if not isinstance(saved, dict) or saved.get("value") != encoded_value:
+            raise OSError("persistent_state_write_unconfirmed")
+        confirmed = persistent_state_request("GET", CLOUDFLARE_COMPATIBILITY_STATE_KEY)
+        if not isinstance(confirmed, dict) or confirmed.get("value") != encoded_value:
+            raise OSError("persistent_state_readback_unconfirmed")
+        PERSISTENT_STATE_CACHE.clear()
+        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+        return True
+
+
 def read_persistent_state(name):
     cached = PERSISTENT_STATE_CACHE.get(name)
     if cached and time.time() - cached["at"] < 3:
@@ -575,12 +638,26 @@ def read_persistent_state(name):
     if not backend:
         return None
 
+    if backend == "cloudflare" and cloudflare_uses_shared_state():
+        value = read_cloudflare_shared_state(name)
+        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+        return value
+
     key = PERSISTENT_STATE_KEYS[name]
     try:
         result = persistent_state_request("GET", key)
-    except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
+    except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        if backend == "cloudflare" and persistent_error_detail(exc) == "worker_invalid_key":
+            enable_cloudflare_shared_state()
+            value = read_cloudflare_shared_state(name)
+            PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+            return value
         result = None
     value = decode_persistent_value(result.get("value")) if isinstance(result, dict) else None
+    if backend == "cloudflare" and name == "library_catalog" and isinstance(value, dict) and value.get(CLOUDFLARE_COMPATIBILITY_STATE_FIELD) == CLOUDFLARE_COMPATIBILITY_STATE_MARKER:
+        enable_cloudflare_shared_state()
+        states = value.get("states", {})
+        value = states.get(name) if isinstance(states, dict) else None
     # Preserve records written by the former shared-envelope implementation
     # until they are migrated by the next curriculum save.
     if backend == "cloudflare" and value is None and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
@@ -594,24 +671,32 @@ def read_persistent_state(name):
 def write_persistent_state(name, value):
     backend = persistent_state_config()[0]
     if backend:
-        if backend == "cloudflare" and name == "curriculum":
-            previous = cloudflare_curriculum_auxiliary_envelope()
-            migrate_legacy_cloudflare_auxiliary_state(previous)
-        encoded_value = encode_persistent_value(value)
-        saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], encoded_value)
-        expected = encoded_value
-        # A 2xx response without the value is not proof that the remote store
-        # accepted the edit. Refuse to display a false success message.
-        if not isinstance(saved, dict) or saved.get("value") != expected:
-            raise OSError("persistent_state_write_unconfirmed")
-        # A 2xx PUT response alone is not a durable-save guarantee. Read the
-        # value back from the state abstraction (which also uses the mirror on
-        # a Cloudflare failure) before we tell an editor that it is saved.
-        confirmed = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
-        if not isinstance(confirmed, dict) or confirmed.get("value") != expected:
-            raise OSError("persistent_state_readback_unconfirmed")
-        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
-        return True
+        if backend == "cloudflare" and cloudflare_uses_shared_state():
+            return write_cloudflare_shared_state(name, value)
+        try:
+            if backend == "cloudflare" and name == "curriculum":
+                previous = cloudflare_curriculum_auxiliary_envelope()
+                migrate_legacy_cloudflare_auxiliary_state(previous)
+            encoded_value = encode_persistent_value(value)
+            saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], encoded_value)
+            expected = encoded_value
+            # A 2xx response without the value is not proof that the remote store
+            # accepted the edit. Refuse to display a false success message.
+            if not isinstance(saved, dict) or saved.get("value") != expected:
+                raise OSError("persistent_state_write_unconfirmed")
+            # A 2xx PUT response alone is not a durable-save guarantee. Read the
+            # value back from the state abstraction (which also uses the mirror on
+            # a Cloudflare failure) before we tell an editor that it is saved.
+            confirmed = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+            if not isinstance(confirmed, dict) or confirmed.get("value") != expected:
+                raise OSError("persistent_state_readback_unconfirmed")
+            PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+            return True
+        except HTTPError as exc:
+            if backend == "cloudflare" and persistent_error_detail(exc) == "worker_invalid_key":
+                enable_cloudflare_shared_state()
+                return write_cloudflare_shared_state(name, value)
+            raise
     if not allow_local_state():
         raise ValueError("state_not_configured")
     return False

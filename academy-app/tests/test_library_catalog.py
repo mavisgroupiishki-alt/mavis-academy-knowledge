@@ -1213,6 +1213,30 @@ class PersistentStateTransportTests(unittest.TestCase):
             server.PERSISTENT_STATE_CACHE.clear()
             self.assertIsNone(server.read_persistent_state("document_overrides"))
 
+    def test_cloudflare_uses_confirmed_catalog_key_when_worker_rejects_curriculum_key(self):
+        stored = {server.CLOUDFLARE_COMPATIBILITY_STATE_KEY: {"hidden": [], "overrides": {}, "custom": [], "archived": []}}
+        rejection = server.HTTPError("https://state.example", 400, "invalid_key", None, None)
+        rejection.academy_storage_detail = "worker_invalid_key"
+
+        def request(method, key, value=None):
+            if key == server.PERSISTENT_STATE_KEYS["curriculum"]:
+                raise rejection
+            if method == "POST":
+                stored[key] = value
+            return {"value": stored.get(key)}
+
+        curriculum = {"courses": [{"id": "day-1"}], "days": [], "planVersion": "test"}
+        with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://example", None, "token")), patch.object(
+            server, "persistent_state_request", side_effect=request
+        ), patch.object(server, "CLOUDFLARE_SHARED_STATE_ENABLED", False):
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertTrue(server.write_persistent_state("curriculum", curriculum))
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertEqual(server.read_persistent_state("curriculum"), curriculum)
+            envelope = stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]
+            self.assertEqual(envelope[server.CLOUDFLARE_COMPATIBILITY_STATE_FIELD], server.CLOUDFLARE_COMPATIBILITY_STATE_MARKER)
+            self.assertEqual(envelope["states"]["library_catalog"]["custom"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
