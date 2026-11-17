@@ -843,10 +843,11 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual([item["candidate_name"] for item in kept], ["Анна Петрова"])
         self.assertEqual(removed, 1)
 
-    def test_leader_results_falls_back_when_primary_store_is_temporarily_unavailable(self):
+    def test_leader_results_uses_cloudflare_activity_store(self):
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
 
-        self.assertIn('except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):\n            fallback = read_fallback_results()', backend)
+        self.assertIn('activity = read_trainee_activity_state()', backend)
+        self.assertIn('payload["storage"] = "cloudflare"', backend)
         self.assertIn('"submissions": normalized_submissions[-100:]', backend)
 
     def test_knowledge_gap_is_saved_once_without_breaking_a_question(self):
@@ -923,7 +924,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("async scheduled", worker)
         self.assertIn('https://mavis-academy.onrender.com/healthz', worker)
 
-    def test_state_request_uses_guarded_rpc_and_never_exposes_access_token_in_url(self):
+    def test_cloudflare_is_the_only_state_backend(self):
         captured = {}
 
         class Response:
@@ -934,7 +935,7 @@ class PersistentStateTransportTests(unittest.TestCase):
                 return False
 
             def read(self):
-                return b'[{"value":{"custom":[]}}]'
+                return b'{"value":{"custom":[]}}'
 
         def fake_urlopen(request, timeout):
             captured["url"] = request.full_url
@@ -943,14 +944,14 @@ class PersistentStateTransportTests(unittest.TestCase):
             return Response()
 
         with patch.dict(server.os.environ, {
-            "ACADEMY_RESULTS_URL": "https://example.supabase.co",
-            "ACADEMY_RESULTS_SERVICE_KEY": "public-key",
-            "ACADEMY_RESULTS_WRITE_TOKEN": "server-only-token",
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_TOKEN": "server-only-token",
         }, clear=False), patch.object(server, "urlopen", fake_urlopen):
             payload = server.persistent_state_request("GET", "academy:library-catalog")
 
         self.assertEqual(payload, {"value": {"custom": []}})
-        self.assertEqual(captured["url"], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
+        self.assertEqual(captured["url"], "https://mavis-academy-state.example.workers.dev/state?key=academy%3Alibrary-catalog")
         self.assertNotIn("server-only-token", captured["url"])
 
     def test_cloudflare_state_config_accepts_the_worker_secret_name_on_render(self):
@@ -966,7 +967,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(token, "worker-secret")
 
     def test_persistent_write_rejects_a_success_response_without_the_saved_value(self):
-        with patch.object(server, "persistent_state_config", return_value=("supabase", "https://example", "key", "token")), patch.object(
+        with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://example", None, "token")), patch.object(
             server, "persistent_state_request", return_value={"saved": True}
         ):
             with self.assertRaisesRegex(OSError, "write_unconfirmed"):
@@ -1006,7 +1007,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(captured["headers"]["User-agent"], "Mavis-Academy-State/1.0")
         self.assertNotIn("server-only-token", captured["url"])
 
-    def test_confirmed_cloudflare_write_is_mirrored_to_supabase(self):
+    def test_confirmed_cloudflare_write_does_not_call_supabase(self):
         requested_urls = []
 
         class Response:
@@ -1017,7 +1018,7 @@ class PersistentStateTransportTests(unittest.TestCase):
                 return False
 
             def read(self):
-                return b'{"value":{"custom":[]}}' if "workers.dev" in requested_urls[-1] else b'[{"value":{"custom":[]}}]'
+                return b'{"value":{"custom":[]}}'
 
         def fake_urlopen(request, timeout):
             requested_urls.append(request.full_url)
@@ -1027,19 +1028,15 @@ class PersistentStateTransportTests(unittest.TestCase):
             "ACADEMY_STATE_BACKEND": "cloudflare",
             "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
             "ACADEMY_STATE_WRITE_TOKEN": "cloudflare-token",
-            "ACADEMY_RESULTS_URL": "https://example.supabase.co",
-            "ACADEMY_RESULTS_SERVICE_KEY": "service-key",
-            "ACADEMY_RESULTS_WRITE_TOKEN": "results-token",
         }, clear=False), patch.object(server, "urlopen", fake_urlopen):
             payload = server.persistent_state_request("POST", "academy:library-catalog", {"custom": []})
 
         self.assertEqual(payload, {"value": {"custom": []}})
-        self.assertEqual(len(requested_urls), 2)
+        self.assertEqual(len(requested_urls), 1)
         self.assertIn("workers.dev/state?key=academy%3Alibrary-catalog", requested_urls[0])
-        self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/rpc/academy_write_dashboard_state")
 
     def test_persistent_write_requires_a_readback_match(self):
-        with patch.object(server, "persistent_state_config", return_value=("supabase", "https://example", "key", "token")), patch.object(
+        with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://example", None, "token")), patch.object(
             server, "persistent_state_request", side_effect=[{"value": {"custom": []}}, {"value": {"custom": ["stale"]}}]
         ):
             with self.assertRaisesRegex(OSError, "readback_unconfirmed"):

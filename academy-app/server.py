@@ -417,129 +417,25 @@ def access_role_from_header(headers):
     return payload["role"] if payload else None
 
 
-def results_store_config():
-    url = os.getenv("ACADEMY_RESULTS_URL", "").rstrip("/")
-    api_key = os.getenv("ACADEMY_RESULTS_SERVICE_KEY", "")
-    write_token = os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", "")
-    return (url, api_key, write_token) if url and api_key and write_token else (None, None, None)
-
-
-def results_request(method, path, payload=None):
-    url, api_key, _ = results_store_config()
-    if not url or not api_key:
-        raise ValueError("results_not_configured")
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
-    request = Request(
-        url + "/rest/v1/" + path.lstrip("/"),
-        data=body,
-        headers={
-            "apikey": api_key,
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-            "Prefer": "return=representation",
-        },
-        method=method,
-    )
-    with urlopen(request, timeout=15) as response:
-        raw = response.read()
-    return json.loads(raw.decode("utf-8")) if raw else []
-
-
 def persistent_state_config():
-    """Return the server-only connection used for Academy content edits.
+    """Return the only production state store: Cloudflare Worker + D1.
 
-    Cloudflare D1 is the primary production store.  The existing Supabase RPC
-    path remains available while the migration is deployed.  In both cases the
-    browser never receives the token used to read or write editor state.
+    The browser never receives the Worker token.  Supabase is deliberately not
+    a fallback: a billing error there must never make a confirmed D1 edit look
+    unsaved or split Academy data between two stores.
     """
-    backend = os.getenv("ACADEMY_STATE_BACKEND", "supabase").lower()
+    backend = os.getenv("ACADEMY_STATE_BACKEND", "cloudflare").lower()
     # The Worker secret is named ACADEMY_STATE_TOKEN. Earlier Academy
     # releases documented its Render counterpart as ACADEMY_STATE_WRITE_TOKEN,
     # so accept both names while the service configuration is being migrated.
     access_token = (
         os.getenv("ACADEMY_STATE_WRITE_TOKEN")
-        or os.getenv("ACADEMY_STATE_TOKEN")
-        or os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", "")
+        or os.getenv("ACADEMY_STATE_TOKEN", "")
     )
     if backend == "cloudflare":
         url = os.getenv("ACADEMY_STATE_URL", "").rstrip("/")
         return (backend, url, None, access_token) if url and access_token else (None, None, None, None)
-
-    url = os.getenv("ACADEMY_STATE_URL", os.getenv("ACADEMY_RESULTS_URL", "")).rstrip("/")
-    api_key = os.getenv("ACADEMY_STATE_SERVICE_KEY", os.getenv("ACADEMY_RESULTS_SERVICE_KEY", ""))
-    return (backend, url, api_key, access_token) if url and api_key and access_token else (None, None, None, None)
-
-
-def supabase_state_fallback_config():
-    """Return the already configured results store as a durable state fallback.
-
-    The Academy used this Supabase RPC store before the Cloudflare migration.
-    Keeping it as a server-side fallback means an out-of-date Worker cannot
-    make trainee results or the governance screen disappear.  It is never
-    exposed to the browser and is only consulted when Cloudflare rejects or
-    cannot read a state key.
-    """
-    url = os.getenv("ACADEMY_RESULTS_URL", "").rstrip("/")
-    api_key = os.getenv("ACADEMY_RESULTS_SERVICE_KEY", "")
-    access_token = os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", "")
-    return (url, api_key, access_token) if url and api_key and access_token else (None, None, None)
-
-
-def supabase_state_request(method, key, value=None):
-    """Call the guarded state RPC through the server-only Supabase key."""
-    url, api_key, access_token = supabase_state_fallback_config()
-    if not url or not api_key or not access_token:
-        raise ValueError("state_not_configured")
-    function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
-    payload = {"p_access_token": access_token, "p_key": key}
-    if method == "POST":
-        payload["p_value"] = value
-    request = Request(
-        url + "/rest/v1/rpc/" + function,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "apikey": api_key,
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=15) as response:
-            raw = response.read()
-    except HTTPError as exc:
-        # Do not log the request body: it includes the private state token.
-        print(f"Academy Supabase state store failed: HTTP {exc.code}", flush=True)
-        raise
-    except URLError:
-        print("Academy Supabase state store failed: network error", flush=True)
-        raise
-    result = json.loads(raw.decode("utf-8")) if raw else []
-    if isinstance(result, list):
-        first = result[0] if result else {}
-        return {"value": first.get("value") if isinstance(first, dict) else None}
-    return result
-
-
-def mirror_cloudflare_state_to_supabase(key, value):
-    """Keep a second durable copy of each Cloudflare-backed editor record.
-
-    Cloudflare D1 is the live primary store, but a Worker route, binding or
-    token can be changed independently from Render.  A successful primary
-    write is therefore mirrored to the existing private Supabase state store
-    when it is configured.  The mirror is intentionally best-effort: one
-    healthy durable store is better than rejecting an edit that Cloudflare has
-    already confirmed, and a later read can recover the mirrored value when
-    Cloudflare is unavailable.
-    """
-    try:
-        mirrored = supabase_state_request("POST", key, value)
-        if not isinstance(mirrored, dict) or mirrored.get("value") != value:
-            print("Academy state mirror failed: write unconfirmed", flush=True)
-    except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
-        # Never log the state payload or storage credentials. The Render log
-        # still records that the replica needs attention.
-        print("Academy state mirror failed: Supabase unavailable", flush=True)
+    return (None, None, None, None)
 
 
 def allow_local_state():
@@ -553,58 +449,32 @@ def persistent_state_request(method, key, value=None):
     backend, url, api_key, access_token = persistent_state_config()
     if not backend or not url or not access_token:
         raise ValueError("state_not_configured")
-
-    if backend == "cloudflare":
-        body = json.dumps({"value": value}, ensure_ascii=False).encode("utf-8") if method == "POST" else None
-        request = Request(
-            url + "/state?key=" + quote(key, safe=""),
-            data=body,
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "User-Agent": "Mavis-Academy-State/1.0",
-                "X-Academy-State-Token": access_token,
-            },
-            method="PUT" if method == "POST" else "GET",
-        )
-        try:
-            with urlopen(request, timeout=15) as response:
-                raw = response.read()
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-        except HTTPError as exc:
-            # Do not include URLs, headers or response bodies: they can contain
-            # storage credentials.  The status is enough to diagnose a remote
-            # state-store configuration problem in the server log.
-            print(f"Academy state store failed: cloudflare HTTP {exc.code}", flush=True)
-            # Cloudflare may reject a valid Academy request when its Worker
-            # secret is rotated or its route is temporarily unavailable. The
-            # active Supabase Academy store is a server-side durable mirror;
-            # use it for every Cloudflare HTTP failure, including 401/403,
-            # rather than turning an editor action into a lost change.
-            return supabase_state_request(method, key, value)
-        except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError):
-            # A proxy or a partially deployed Worker can answer 200 with an
-            # HTML/error payload. It is not a valid state response, so use
-            # the durable Supabase mirror just as we do for HTTP failures.
-            return supabase_state_request(method, key, value)
-        if not isinstance(payload, dict):
-            return supabase_state_request(method, key, value)
-        # A newly deployed Worker has no row for values stored by the former
-        # backend.  Read that value once from Supabase; the next save migrates
-        # it to Cloudflare without losing a trainee or a revision history.
-        if method == "GET" and isinstance(payload, dict) and payload.get("value") is None:
-            legacy_url, legacy_key, legacy_token = supabase_state_fallback_config()
-            if legacy_url and legacy_key and legacy_token:
-                legacy = supabase_state_request("GET", key)
-                if isinstance(legacy, dict) and legacy.get("value") is not None:
-                    return legacy
-        if method == "POST":
-            # A mirror prevents a later Worker outage or accidental D1 reset
-            # from making confirmed Academy edits disappear after a refresh.
-            mirror_cloudflare_state_to_supabase(key, value)
-        return payload
-
-    return supabase_state_request(method, key, value)
+    if backend != "cloudflare":
+        raise ValueError("state_not_configured")
+    body = json.dumps({"value": value}, ensure_ascii=False).encode("utf-8") if method == "POST" else None
+    request = Request(
+        url + "/state?key=" + quote(key, safe=""),
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mavis-Academy-State/1.0",
+            "X-Academy-State-Token": access_token,
+        },
+        method="PUT" if method == "POST" else "GET",
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            raw = response.read()
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+    except HTTPError as exc:
+        # Do not include URLs, headers or response bodies: they can contain
+        # storage credentials. The status is enough for Render diagnostics.
+        print(f"Academy state store failed: cloudflare HTTP {exc.code}", flush=True)
+        raise
+    if not isinstance(payload, dict):
+        raise ValueError("invalid_state_response")
+    return payload
 
 
 def cloudflare_curriculum_auxiliary_envelope():
@@ -725,7 +595,7 @@ def register_fallback_trainee(candidate_name):
 
 
 def register_trainee(candidate_name):
-    """Persist every registered trainee independently of assessment RPCs."""
+    """Persist every registered trainee in Cloudflare D1 at sign-in."""
     candidate_name = " ".join(str(candidate_name or "").split())[:80]
     if len(candidate_name) < 2:
         return
@@ -741,12 +611,9 @@ def register_trainee(candidate_name):
             items.append({"candidate_name": candidate_name, "first_seen_at": now, "last_seen_at": now})
         write_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": items[-1000:]})
     except (OSError, URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError, TypeError):
-        # Keep sign-in available; the separate results RPC and fallback remain
-        # independent paths when the registry provider is temporarily down.
-        pass
-    try:
-        register_fallback_trainee(candidate_name)
-    except OSError:
+        # Authentication stays available during a temporary storage outage;
+        # the client can show an explicit save error rather than pretending the
+        # registration was durable.
         pass
 
 
@@ -868,6 +735,30 @@ def save_fallback_attempt(row):
     stored = {**row, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     value["results"].insert(0, stored)
     write_fallback_results(value)
+    return stored
+
+
+def read_trainee_activity_state():
+    """Load submissions and test attempts from the same Cloudflare D1 record.
+
+    Keeping both trainee-originated activity streams together uses an existing
+    allowlisted Worker key, so no second provider or Worker secret is needed.
+    """
+    state = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": [], "attempts": []})
+    if not isinstance(state, dict):
+        return {"items": [], "attempts": []}
+    return {
+        "items": state.get("items", []) if isinstance(state.get("items"), list) else [],
+        "attempts": state.get("attempts", []) if isinstance(state.get("attempts"), list) else [],
+    }
+
+
+def save_cloudflare_attempt(row):
+    """Persist one trainee test result to Cloudflare D1 and confirm the write."""
+    state = read_trainee_activity_state()
+    stored = {**row, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    state["attempts"] = (state["attempts"] + [stored])[-2000:]
+    write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, state)
     return stored
 
 
@@ -1418,74 +1309,42 @@ class Handler(SimpleHTTPRequestHandler):
                 "passed": passed,
                 "result": safe_result,
             }
-            _, _, write_token = results_store_config()
-            try:
-                stored = results_request("POST", "rpc/academy_save_attempt", {
-                    "p_access_token": write_token,
-                    "p_candidate_name": row["candidate_name"],
-                    "p_attempt_type": row["attempt_type"],
-                    "p_attempt_number": row["attempt_number"],
-                    "p_score": row["score"],
-                    "p_max_score": row["max_score"],
-                    "p_passed": row["passed"],
-                    "p_result": row["result"],
-                })
-                return self.respond_json({"saved": True, "attempt": stored or row})
-            except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-                return self.respond_json({"saved": True, "attempt": save_fallback_attempt(row), "storage": "server_fallback"})
-        except ValueError as exc:
-            if str(exc) == "results_not_configured":
-                return self.respond_json({"error": "results_not_configured"}, 503)
+            stored = save_cloudflare_attempt(row)
+            return self.respond_json({"saved": True, "attempt": stored, "storage": "cloudflare"})
+        except ValueError:
             return self.respond_json({"error": "invalid_attempt"}, 400)
-        except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-            return self.respond_json({"error": "results_unavailable"}, 503)
+        except (OSError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def academy_leader_results(self):
         if access_role_from_header(self.headers) != "leader":
             return self.respond_json({"error": "forbidden"}, 403)
         try:
-            _, _, write_token = results_store_config()
-            rows = results_request("POST", "rpc/academy_list_attempts", {"p_access_token": write_token})
-            trainees = results_request("POST", "rpc/academy_list_trainees", {"p_access_token": write_token})
-            return self.respond_json(self.leader_operational_payload(rows, trainees))
-        except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-            fallback = read_fallback_results()
-            payload = self.leader_operational_payload(fallback["results"], fallback["trainees"])
-            payload["storage"] = "server_fallback"
+            activity = read_trainee_activity_state()
+            registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
+            trainees = registry.get("items", []) if isinstance(registry, dict) else []
+            payload = self.leader_operational_payload(activity["attempts"], trainees)
+            payload["storage"] = "cloudflare"
             return self.respond_json(payload)
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError, TypeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def cleanup_technical_trainees(self):
         if access_role_from_header(self.headers) != "leader":
             return self.respond_json({"error": "forbidden"}, 403)
         try:
-            remote_removed = 0
-            try:
-                _, _, write_token = results_store_config()
-                remote = results_request("POST", "rpc/academy_cleanup_technical_trainees", {"p_access_token": write_token})
-                remote_removed = int(remote[0].get("removed", 0)) if isinstance(remote, list) and remote and isinstance(remote[0], dict) else int(remote or 0)
-            except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-                # Older result stores may not have the cleanup RPC yet.  The
-                # durable local sources are still cleaned below.
-                remote_removed = 0
             registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
             registry_items = registry.get("items", []) if isinstance(registry, dict) else []
             clean_registry, registry_removed = remove_technical_trainees(registry_items)
             if registry_removed:
                 write_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": clean_registry})
 
-            fallback = read_fallback_results()
-            clean_fallback, fallback_removed = remove_technical_trainees(fallback.get("trainees", []))
-            clean_results, result_removed = remove_technical_trainee_rows(fallback.get("results", []))
-            if fallback_removed or result_removed:
-                fallback["trainees"] = clean_fallback
-                fallback["results"] = clean_results
-                write_fallback_results(fallback)
-            submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
-            submission_items = submissions.get("items", []) if isinstance(submissions, dict) else []
-            clean_submissions, submission_removed = remove_technical_trainee_rows(submission_items)
-            if submission_removed:
-                write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": clean_submissions})
-            return self.respond_json({"removed": remote_removed + registry_removed + fallback_removed + result_removed + submission_removed})
+            activity = read_trainee_activity_state()
+            clean_submissions, submission_removed = remove_technical_trainee_rows(activity["items"])
+            clean_attempts, attempt_removed = remove_technical_trainee_rows(activity["attempts"])
+            if submission_removed or attempt_removed:
+                write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": clean_submissions, "attempts": clean_attempts})
+            return self.respond_json({"removed": registry_removed + submission_removed + attempt_removed})
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
@@ -1498,33 +1357,16 @@ class Handler(SimpleHTTPRequestHandler):
             candidate_name = trainee_display_name(payload.get("candidate_name"))
             if len(candidate_name) < 2:
                 return self.respond_json({"error": "invalid_name"}, 400)
-            remote_removed = 0
-            try:
-                _, _, write_token = results_store_config()
-                remote = results_request("POST", "rpc/academy_remove_trainee", {
-                    "p_access_token": write_token,
-                    "p_candidate_name": candidate_name,
-                })
-                remote_removed = int(remote[0].get("removed", 0)) if isinstance(remote, list) and remote and isinstance(remote[0], dict) else int(remote or 0)
-            except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-                remote_removed = 0
-
             registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
             clean_registry, registry_removed = remove_named_trainee(registry.get("items", []) if isinstance(registry, dict) else [], candidate_name)
             if registry_removed:
                 write_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": clean_registry})
-            fallback = read_fallback_results()
-            clean_fallback, fallback_removed = remove_named_trainee(fallback.get("trainees", []), candidate_name)
-            clean_results, result_removed = remove_named_trainee(fallback.get("results", []), candidate_name)
-            if fallback_removed or result_removed:
-                fallback["trainees"] = clean_fallback
-                fallback["results"] = clean_results
-                write_fallback_results(fallback)
-            submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
-            clean_submissions, submission_removed = remove_named_trainee(submissions.get("items", []) if isinstance(submissions, dict) else [], candidate_name)
-            if submission_removed:
-                write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": clean_submissions})
-            return self.respond_json({"removed": remote_removed + registry_removed + fallback_removed + result_removed + submission_removed})
+            activity = read_trainee_activity_state()
+            clean_submissions, submission_removed = remove_named_trainee(activity["items"], candidate_name)
+            clean_attempts, attempt_removed = remove_named_trainee(activity["attempts"], candidate_name)
+            if submission_removed or attempt_removed:
+                write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": clean_submissions, "attempts": clean_attempts})
+            return self.respond_json({"removed": registry_removed + submission_removed + attempt_removed})
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
@@ -1579,21 +1421,13 @@ class Handler(SimpleHTTPRequestHandler):
             progress_state = read_auxiliary_state("trainee_progress", TRAINEE_PROGRESS_STORE, {"items": {}})
             progress_items = progress_state.get("items", {}) if isinstance(progress_state, dict) else {}
             progress = progress_items.get(candidate_name.casefold(), {}).get("progress", {}) if isinstance(progress_items, dict) else {}
-            _, _, write_token = results_store_config()
-            rows = results_request("POST", "rpc/academy_list_attempts", {"p_access_token": write_token})
-            storage = "primary"
-        except ValueError:
-            rows = read_fallback_results().get("results", [])
-            progress = progress if isinstance(progress, dict) else {}
-            storage = "server_fallback"
-        except (URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
-            rows = read_fallback_results().get("results", [])
-            progress = progress if isinstance(progress, dict) else {}
-            storage = "server_fallback"
+            rows = read_trainee_activity_state()["attempts"]
+            storage = "cloudflare"
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
         rows = [row for row in (rows if isinstance(rows, list) else []) if str(row.get("candidate_name", "")).casefold() == candidate_name.casefold()][-100:]
         try:
-            submissions_state = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
-            submissions = [row for row in submissions_state.get("items", []) if str(row.get("candidate_name", "")).casefold() == candidate_name.casefold()][-100:]
+            submissions = [row for row in read_trainee_activity_state()["items"] if str(row.get("candidate_name", "")).casefold() == candidate_name.casefold()][-100:]
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
             submissions = []
         return self.respond_json({"progress": progress if isinstance(progress, dict) else {}, "results": rows, "submissions": submissions, "storage": storage})
@@ -1626,14 +1460,13 @@ class Handler(SimpleHTTPRequestHandler):
             registered = registry.get("items", []) if isinstance(registry, dict) else []
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError, TypeError):
             registered = []
-        fallback_trainees = read_fallback_results().get("trainees", [])
         normalized_rows, merged_trainees = reconcile_trainee_reporting(
             rows,
             [*registered, *(trainees if isinstance(trainees, list) else [])],
-            fallback_trainees,
+            [],
         )
         try:
-            submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+            submissions = {"items": read_trainee_activity_state()["items"]}
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
             submissions = {"items": []}
         try:
@@ -1684,8 +1517,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond_json({"error": "invalid_submission"}, 400)
             if link and not re.fullmatch(r"https://[^\s]{1,1800}", link):
                 return self.respond_json({"error": "invalid_link"}, 400)
-            state = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
-            items = state.get("items", []) if isinstance(state, dict) else []
+            state = read_trainee_activity_state()
+            items = state["items"]
             row = {
                 "id": secrets.token_urlsafe(10),
                 "candidate_name": access["name"],
@@ -1695,7 +1528,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "link": link,
                 "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
-            write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": (items + [row])[-500:]})
+            write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": (items + [row])[-500:], "attempts": state["attempts"]})
             return self.respond_json({"saved": True, "submission": row})
         except ValueError as exc:
             if str(exc) == "state_not_configured":
@@ -1916,16 +1749,6 @@ class Handler(SimpleHTTPRequestHandler):
             # rather than only after completing their first assessment.
             if role == "trainee":
                 register_trainee(display_name)
-                try:
-                    _, _, write_token = results_store_config()
-                    results_request("POST", "rpc/academy_register_trainee", {
-                        "p_access_token": write_token,
-                        "p_candidate_name": display_name,
-                    })
-                except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
-                    # Authentication must remain available if a reporting
-                    # provider has a temporary outage.
-                    pass
             return self.respond_json({"role": role, "display_name": display_name, "token": issue_access_token(role, display_name), "expires_in": ACCESS_TOKEN_TTL})
         except (ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "invalid_request"}, 400)
