@@ -739,12 +739,39 @@ def remove_technical_trainees(items):
     return kept, removed
 
 
+def remove_technical_trainee_rows(items):
+    """Remove attempts/submissions that belong to a technical trainee."""
+    kept = []
+    removed = 0
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and is_real_trainee_name(item.get("candidate_name")):
+            kept.append(item)
+        else:
+            removed += 1
+    return kept, removed
+
+
+def remove_named_trainee(items, candidate_name):
+    """Remove one exact trainee record without guessing about other people."""
+    expected = trainee_display_name(candidate_name).casefold()
+    kept = []
+    removed = 0
+    for item in items if isinstance(items, list) else []:
+        name = trainee_display_name(item.get("candidate_name")) if isinstance(item, dict) else ""
+        if name.casefold() == expected:
+            removed += 1
+        else:
+            kept.append(item)
+    return kept, removed
+
+
 def reconcile_trainee_reporting(rows, registered, fallback_trainees):
     """Use real registered display names consistently in the leader report.
 
     Older result RPC rows may differ from the login only by case.  The
-    registry is created at sign-in, so it is the authoritative spelling for
-    the leader screen.  Service/demo records are never promoted to a trainee.
+    registry is created at sign-in, so it is the authoritative list for the
+    leader screen.  An orphaned historical attempt must not create a fake
+    trainee card after the registry has been cleaned.
     """
     display_names = {}
     merged = {}
@@ -767,8 +794,9 @@ def reconcile_trainee_reporting(rows, registered, fallback_trainees):
         if not is_real_trainee_name(raw_name):
             continue
         key = raw_name.casefold()
-        canonical = display_names.setdefault(key, raw_name)
-        merged.setdefault(key, {"candidate_name": canonical})
+        canonical = display_names.get(key)
+        if not canonical:
+            continue
         normalized_rows.append({**row, "candidate_name": canonical})
 
     return normalized_rows, list(merged.values())
@@ -1286,6 +1314,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.save_trainee_progress()
         if self.path == "/api/academy/trainees/cleanup":
             return self.cleanup_technical_trainees()
+        if self.path == "/api/academy/trainees/remove":
+            return self.remove_trainee_from_results()
         if self.path != "/api/ai/grade":
             return self.respond_json({"error": "not_found"}, 404)
         try:
@@ -1396,6 +1426,15 @@ class Handler(SimpleHTTPRequestHandler):
         if access_role_from_header(self.headers) != "leader":
             return self.respond_json({"error": "forbidden"}, 403)
         try:
+            remote_removed = 0
+            try:
+                _, _, write_token = results_store_config()
+                remote = results_request("POST", "rpc/academy_cleanup_technical_trainees", {"p_access_token": write_token})
+                remote_removed = int(remote[0].get("removed", 0)) if isinstance(remote, list) and remote and isinstance(remote[0], dict) else int(remote or 0)
+            except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
+                # Older result stores may not have the cleanup RPC yet.  The
+                # durable local sources are still cleaned below.
+                remote_removed = 0
             registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
             registry_items = registry.get("items", []) if isinstance(registry, dict) else []
             clean_registry, registry_removed = remove_technical_trainees(registry_items)
@@ -1404,10 +1443,56 @@ class Handler(SimpleHTTPRequestHandler):
 
             fallback = read_fallback_results()
             clean_fallback, fallback_removed = remove_technical_trainees(fallback.get("trainees", []))
-            if fallback_removed:
+            clean_results, result_removed = remove_technical_trainee_rows(fallback.get("results", []))
+            if fallback_removed or result_removed:
                 fallback["trainees"] = clean_fallback
+                fallback["results"] = clean_results
                 write_fallback_results(fallback)
-            return self.respond_json({"removed": registry_removed + fallback_removed})
+            submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+            submission_items = submissions.get("items", []) if isinstance(submissions, dict) else []
+            clean_submissions, submission_removed = remove_technical_trainee_rows(submission_items)
+            if submission_removed:
+                write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": clean_submissions})
+            return self.respond_json({"removed": remote_removed + registry_removed + fallback_removed + result_removed + submission_removed})
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+
+    def remove_trainee_from_results(self):
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length)) if 0 < length <= 6000 else {}
+            candidate_name = trainee_display_name(payload.get("candidate_name"))
+            if len(candidate_name) < 2:
+                return self.respond_json({"error": "invalid_name"}, 400)
+            remote_removed = 0
+            try:
+                _, _, write_token = results_store_config()
+                remote = results_request("POST", "rpc/academy_remove_trainee", {
+                    "p_access_token": write_token,
+                    "p_candidate_name": candidate_name,
+                })
+                remote_removed = int(remote[0].get("removed", 0)) if isinstance(remote, list) and remote and isinstance(remote[0], dict) else int(remote or 0)
+            except (ValueError, URLError, HTTPError, TimeoutError, json.JSONDecodeError, TypeError):
+                remote_removed = 0
+
+            registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
+            clean_registry, registry_removed = remove_named_trainee(registry.get("items", []) if isinstance(registry, dict) else [], candidate_name)
+            if registry_removed:
+                write_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": clean_registry})
+            fallback = read_fallback_results()
+            clean_fallback, fallback_removed = remove_named_trainee(fallback.get("trainees", []), candidate_name)
+            clean_results, result_removed = remove_named_trainee(fallback.get("results", []), candidate_name)
+            if fallback_removed or result_removed:
+                fallback["trainees"] = clean_fallback
+                fallback["results"] = clean_results
+                write_fallback_results(fallback)
+            submissions = read_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": []})
+            clean_submissions, submission_removed = remove_named_trainee(submissions.get("items", []) if isinstance(submissions, dict) else [], candidate_name)
+            if submission_removed:
+                write_auxiliary_state("trainee_submissions", TRAINEE_SUBMISSIONS_STORE, {"items": clean_submissions})
+            return self.respond_json({"removed": remote_removed + registry_removed + fallback_removed + result_removed + submission_removed})
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
@@ -1506,9 +1591,9 @@ class Handler(SimpleHTTPRequestHandler):
             if not is_real_trainee_name(name):
                 continue
             key = name.casefold()
-            canonical = canonical_names.setdefault(key, name)
-            if not any(trainee_display_name(existing.get("candidate_name")).casefold() == key for existing in merged_trainees if isinstance(existing, dict)):
-                merged_trainees.append({"candidate_name": canonical})
+            canonical = canonical_names.get(key)
+            if not canonical:
+                continue
             normalized_submissions.append({**item, "candidate_name": canonical})
         event_items = events.get("items", []) if isinstance(events, dict) else []
         opens = [item for item in event_items if item.get("type") == "course_open"]

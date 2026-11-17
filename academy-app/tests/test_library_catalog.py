@@ -318,7 +318,7 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("academyReturnToStaff", source)
         self.assertIn("!['full-library','company'].includes(course.id)", source)
         self.assertIn("Ход работы менеджера", source)
-        self.assertIn("Менеджер не готовит заявление, перечень СИ или технический пакет", source)
+        self.assertIn("const MANAGER_PRODUCT_SALES_ROUTES=", source)
         self.assertIn('id="workspace-script"', source)
         self.assertIn('>Скрипт</a>', source)
         self.assertIn("function loadManagerScripts()", source)
@@ -329,8 +329,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Разбор звонков", source)
         self.assertIn("workspace-script-source", source)
         self.assertIn("function managerSalesWorkflow", source)
-        self.assertIn("Проверить действующие документы и реестры", source)
-        self.assertIn("Материалы отдела продаж · день 2", source)
+        self.assertIn("Проверить действующее СПК", source)
+        self.assertNotIn("Материалы отдела продаж · день 2", source)
         self.assertIn("academyGovernance()", source)
         self.assertIn("academyCleanupTechnicalTrainees", source)
         self.assertNotIn('<a href="#workspace-tips">Подсказки</a>', source)
@@ -677,8 +677,10 @@ class KnowledgeAssistantRetrievalTests(unittest.TestCase):
 
         self.assertIn("function managerSalesWorkflow(course)", source)
         self.assertIn("Ход работы менеджера", source)
-        self.assertIn("Проверить действующие документы и реестры", source)
-        self.assertIn("Менеджер не готовит заявление, перечень СИ или технический пакет", source)
+        self.assertIn("Проверить действующее СПК", source)
+        self.assertIn("MANAGER_PRODUCT_SALES_ROUTES[course.id]", source)
+        self.assertIn("'tr-ts':[", source)
+        self.assertIn("не запрашивает СИ", source)
         self.assertNotIn("loadDocument();loadManagerDetailedWorkflow();", source)
 
     def test_each_product_passport_has_a_detailed_expert_flow(self):
@@ -753,6 +755,16 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual([item["candidate_name"] for item in trainees], ["Анна"])
         self.assertEqual([item["candidate_name"] for item in rows], ["Анна"])
 
+    def test_orphaned_attempt_does_not_create_a_trainee_card(self):
+        rows, trainees = server.reconcile_trainee_reporting(
+            [{"candidate_name": "Старый тест", "attempt_type": "quiz"}],
+            [{"candidate_name": "Анна", "first_seen_at": "2026-11-16T08:00:00Z"}],
+            [],
+        )
+
+        self.assertEqual(rows, [])
+        self.assertEqual([item["candidate_name"] for item in trainees], ["Анна"])
+
     def test_technical_trainee_rows_are_removed_from_registry_data(self):
         kept, removed = server.remove_technical_trainees([
             {"candidate_name": "Анна"},
@@ -762,6 +774,24 @@ class PersistentStateTransportTests(unittest.TestCase):
 
         self.assertEqual([item["candidate_name"] for item in kept], ["Анна"])
         self.assertEqual(removed, 2)
+
+    def test_technical_trainee_results_are_removed_with_the_registry_entries(self):
+        kept, removed = server.remove_technical_trainee_rows([
+            {"candidate_name": "Анна", "attempt_type": "final-exam"},
+            {"candidate_name": "test-run", "attempt_type": "final-exam"},
+        ])
+
+        self.assertEqual([item["candidate_name"] for item in kept], ["Анна"])
+        self.assertEqual(removed, 1)
+
+    def test_named_trainee_removal_is_exact(self):
+        kept, removed = server.remove_named_trainee([
+            {"candidate_name": "Анна"},
+            {"candidate_name": "Анна Петрова"},
+        ], "анна")
+
+        self.assertEqual([item["candidate_name"] for item in kept], ["Анна Петрова"])
+        self.assertEqual(removed, 1)
 
     def test_leader_results_falls_back_when_primary_store_is_temporarily_unavailable(self):
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")

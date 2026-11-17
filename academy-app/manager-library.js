@@ -958,8 +958,8 @@
   const visibleTraineeName=name=>{const value=String(name||'').trim();return value.length>=2&&!/^(?:test|тест|проверка|диагностик|demo|демо|sample|техническ|technical|service|сервис|system|система|admin|administrator|mavis|undefined|null)[\s._-]*/i.test(value);};
   function leaderResults() {
     const rows=(state.leaderResults||[]).filter(row=>visibleTraineeName(row.candidate_name)), trainees=(state.leaderTrainees||[]).filter(item=>visibleTraineeName(item.candidate_name)), candidateNames=new Set(trainees.map(item=>item.candidate_name)); rows.forEach(row=>candidateNames.add(row.candidate_name));
-    const traineeCards=[...candidateNames].map(name=>{const trainee=trainees.find(item=>item.candidate_name===name), attempts=rows.filter(row=>row.candidate_name===name), exams=attempts.filter(row=>row.attempt_type==='final-exam');return `<article class="leader-result-card trainee-card"><div><span>СТАЖЁР</span><b>${esc(name)}</b><small>${trainee?.last_seen_at?`Заходил(а): ${new Date(trainee.last_seen_at).toLocaleString('ru-RU')}`:'Есть сохранённая попытка'}</small></div><strong>${attempts.length}</strong><em class="${exams.some(row=>row.passed)?'passed':'repeat'}">${attempts.length?`${attempts.length} попыток`:'Пока без попыток'}</em></article>`}).join('');
-    return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results"><span>РУКОВОДИТЕЛЬ · КОНТРОЛЬ ОБУЧЕНИЯ</span><h1>Стажёры и результаты</h1><p>Показываются только реальные учебные логины. Служебные и тестовые записи можно удалить из реестра одной очисткой.</p><div class="tile-editor-actions"><button class="reader-test" onclick="academyCurriculumEditor()">Открыть режим стажёра и настроить плитки →</button><button class="reader-complete" onclick="academyCleanupTechnicalTrainees()">Очистить технические записи</button></div><div class="leader-kpis"><article><b>${candidateNames.size}</b><span>зарегистрированных стажёров</span></article><article><b>${rows.filter(row=>row.attempt_type==='final-exam').length}</b><span>итоговых попыток</span></article><article><b>${rows.length?Math.round(rows.reduce((sum,row)=>sum+Number(row.score||0)/Number(row.max_score||1)*100,0)/rows.length):'—'}${rows.length?'%':''}</b><span>средний балл</span></article></div>${state.leaderError?`<div class="exam-error"><p>${esc(state.leaderError)}</p><button class="reader-test" onclick="academyLeaderResults()">Обновить →</button></div>`:''}<h2 class="leader-subhead">Зарегистрированные стажёры</h2><div class="leader-results-list">${traineeCards||'<p>Пока нет подтверждённого входа стажёра. Добавьте сотрудника в управлении доступом или попросите войти под его логином.</p>'}</div><h2 class="leader-subhead">Сохранённые результаты</h2><div class="leader-results-list">${rows.length?rows.map(row=>`<article class="leader-result-card"><div><span>${row.attempt_type==='final-exam'?'ИТОГОВАЯ АТТЕСТАЦИЯ':'ПРАКТИКА ПО ТЕМЕ'}</span><b>${esc(row.candidate_name)}</b><small>Попытка ${row.attempt_number} · ${new Date(row.created_at).toLocaleString('ru-RU')}</small></div><strong>${row.score} / ${row.max_score}</strong><em class="${row.passed?'passed':'repeat'}">${row.passed?'Зачтено':'Нужно повторить'}</em></article>`).join(''):'<p>Сохранённых результатов пока нет.</p>'}</div></section>`);
+    const traineeCards=[...candidateNames].map(name=>{const trainee=trainees.find(item=>item.candidate_name===name), attempts=rows.filter(row=>row.candidate_name===name), exams=attempts.filter(row=>row.attempt_type==='final-exam');return `<article class="leader-result-card trainee-card"><div><span>СТАЖЁР</span><b>${esc(name)}</b><small>${trainee?.last_seen_at?`Заходил(а): ${new Date(trainee.last_seen_at).toLocaleString('ru-RU')}`:'Есть сохранённая попытка'}</small></div><strong>${attempts.length}</strong><em class="${exams.some(row=>row.passed)?'passed':'repeat'}">${attempts.length?`${attempts.length} попыток`:'Пока без попыток'}</em><button class="reader-complete danger" type="button" onclick='academyRemoveTrainee(${JSON.stringify(name)})'>Удалить</button></article>`}).join('');
+    return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results"><span>РУКОВОДИТЕЛЬ · КОНТРОЛЬ ОБУЧЕНИЯ</span><h1>Стажёры и результаты</h1><p>Показываются учебные логины и их результаты. Очистка убирает технические записи, а любую ошибочно созданную запись можно удалить прямо из карточки.</p><div class="tile-editor-actions"><button class="reader-test" onclick="academyCurriculumEditor()">Открыть режим стажёра и настроить плитки →</button><button class="reader-complete" onclick="academyCleanupTechnicalTrainees()">Очистить технические записи</button></div><div class="leader-kpis"><article><b>${candidateNames.size}</b><span>зарегистрированных стажёров</span></article><article><b>${rows.filter(row=>row.attempt_type==='final-exam').length}</b><span>итоговых попыток</span></article><article><b>${rows.length?Math.round(rows.reduce((sum,row)=>sum+Number(row.score||0)/Number(row.max_score||1)*100,0)/rows.length):'—'}${rows.length?'%':''}</b><span>средний балл</span></article></div>${state.leaderError?`<div class="exam-error"><p>${esc(state.leaderError)}</p><button class="reader-test" onclick="academyLeaderResults()">Обновить →</button></div>`:''}<h2 class="leader-subhead">Зарегистрированные стажёры</h2><div class="leader-results-list">${traineeCards||'<p>Пока нет подтверждённого входа стажёра. Добавьте сотрудника в управлении доступом или попросите войти под его логином.</p>'}</div><h2 class="leader-subhead">Сохранённые результаты</h2><div class="leader-results-list">${rows.length?rows.map(row=>`<article class="leader-result-card"><div><span>${row.attempt_type==='final-exam'?'ИТОГОВАЯ АТТЕСТАЦИЯ':'ПРАКТИКА ПО ТЕМЕ'}</span><b>${esc(row.candidate_name)}</b><small>Попытка ${row.attempt_number} · ${new Date(row.created_at).toLocaleString('ru-RU')}</small></div><strong>${row.score} / ${row.max_score}</strong><em class="${row.passed?'passed':'repeat'}">${row.passed?'Зачтено':'Нужно повторить'}</em></article>`).join(''):'<p>Сохранённых результатов пока нет.</p>'}</div></section>`);
   }
   function traineeProfile(){
     const data=state.traineeProfile||{},attempts=Array.isArray(data.results)?data.results:[],submissions=Array.isArray(data.submissions)?data.submissions:[],learned=totalDone(),total=progressTotal(),percent=total?Math.round(learned/total*100):0;
@@ -1010,20 +1010,112 @@
     const specific=ROLE_WORKSPACES[course.id]||{},roleSpecific=specific[audience]||{};
     return {concept:specific.concept||'',people:specific.people||[],tools:specific.tools||[],staticReferences:Boolean(specific.staticReferences),flow:roleSpecific.flow||[],tips:roleSpecific.tips||[]};
   };
-  // Managers sell and coordinate; they do not prepare applications or a
-  // technical package. Keep their route distinct from the expert's route.
+  // Selling routes are deliberately authored per product.  A manager
+  // diagnoses, checks the commercial route and fixes a next action; an expert
+  // later validates the technical pack.  Do not reuse a construction route
+  // for product certification or technical regulations.
+  const MANAGER_PRODUCT_SALES_ROUTES={
+    spk:[
+      'Уточнить заявляемые строительные работы, класс сложности, объект и цель клиента.',
+      'Проверить действующее СПК и дату освидетельствования: новое получение, расширение или сопровождение.',
+      'Выяснить, нужен ли одновременно аттестат соответствия или подбор специалиста; собрать только вводные клиента.',
+      'Передать спорные условия эксперту, затем направить КП с подтверждённым составом и зафиксировать срок следующего контакта.'
+    ],
+    attestation:[
+      'Уточнить, какая аттестация требуется: организации или специалиста, направление работ и класс объекта.',
+      'Проверить действующий аттестат и срок ежегодного подтверждения; выяснить, есть ли СПК и требуется ли он как смежная услуга.',
+      'Собрать сведения о специалистах и действующих документах без самостоятельной технической оценки.',
+      'Передать вводные эксперту, отправить КП по подтверждённому маршруту и назначить дату досылки документов.'
+    ],
+    'iso-suot':[
+      'Уточнить участие в тендерах и госзакупках, требование заказчика, вид деятельности и наличие действующих ISO или СУОТ.',
+      'Проверить сроки сертификатов и ежегодной оценки; определить вариант: оба сертификата, ISO 9001 с документами по ОТ либо только документы по ОТ.',
+      'Зафиксировать численность и исходную готовность компании; спорные требования передать эксперту.',
+      'Согласовать варианты КП и конкретную дату разбора предложения с клиентом.'
+    ],
+    'iso-37001':[
+      'Уточнить, для чего нужен ISO 37001: тендер, требование контрагента, внутренний контроль или репутационный запрос.',
+      'Проверить, какие системы менеджмента уже действуют и требуется ли совместное внедрение или периодическое сопровождение.',
+      'Собрать вводные по компании и сроку без обещания результата до оценки эксперта.',
+      'Согласовать состав работ, КП и дату следующего контакта после экспертной проверки.'
+    ],
+    licences:[
+      'Уточнить систему безопасности, вид работы и объект: проектирование, монтаж, наладка или техническое обслуживание.',
+      'Проверить действующую лицензию и её подвиды: новое получение, расширение либо сопровождение.',
+      'Запросить ТЗ или проект при наличии, срок и исходные документы; технический состав определяет эксперт.',
+      'Передать вводные эксперту, затем направить КП и зафиксировать, кто и когда присылает недостающие данные.'
+    ],
+    mchs:[
+      'Уточнить точную противопожарную систему и вид работ: монтаж, наладка, обслуживание, проектирование или огнезащита.',
+      'Проверить действующую лицензию и нужный подвид; выяснить необходимость расширения или периодического сопровождения.',
+      'Собрать объект, ТЗ, срок и действующие документы; не определять специалистов и оборудование самостоятельно.',
+      'Согласовать с экспертом маршрут, отправить КП и закрепить следующий шаг за клиентом и менеджером.'
+    ],
+    gpn:[
+      'Разделить запрос по направлению: газ, АХУ, сосуды, трубопроводы, автоматика или сварка; отдельно отметить монтаж, наладку, ремонт либо обслуживание.',
+      'Проверить лицензию, подвиды, расширение и возможные смежные услуги: обучение, подбор, сварка или лаборатория.',
+      'Собрать вводные о работах, оборудовании, людях и сроке на уровне клиента, не рассчитывая экзамены и технический состав.',
+      'Передать матрицу эксперту, подготовить КП по подтверждённому объёму и назначить срок досылки документов.'
+    ],
+    'tr-ts':[
+      'Уточнить продукцию, назначение, номенклатуру, изготовителя или импортёра, страну и срок ввода в обращение.',
+      'Проверить, есть ли декларация, сертификат, протоколы и маркировка; определить вероятную допродажу: испытания, ТУ, декларация или сертификат.',
+      'Передать эксперту описание продукции и документы для идентификации; менеджер не выбирает форму оценки по коду ТН ВЭД и не запрашивает СИ.',
+      'После подтверждения схемы согласовать КП с отдельными испытаниями и внешними расходами, закрепив дату следующей связи.'
+    ],
+    'product-cert':[
+      'Уточнить продукцию, назначение, номенклатуру, производителя, производство и цель документа.',
+      'Проверить действующие документы и историю испытаний; выявить сопутствующие услуги: ТУ, декларация, техническое свидетельство, СГР или ОСП.',
+      'Передать описание продукции и файлы эксперту для идентификации; не определять форму документа без подтверждения.',
+      'Согласовать КП после маршрута, отдельно проговорив испытания, внешние платежи и дату следующего контакта.'
+    ],
+    sro:[
+      'Уточнить регион России, вид работ, роль компании, объект и необходимый уровень ответственности.',
+      'Проверить наличие действующей СРО, выписки и НРС-специалистов; определить допродажу: НРС, подбор, вступление или изменение уровня.',
+      'Собрать реквизиты, срок и сведения о специалистах на уровне запроса; пригодность документов подтверждает эксперт.',
+      'Согласовать КП со взносами и услугой, зафиксировать список и дату получения вводных.'
+    ],
+    'foreign-spk-attestation':[
+      'Уточнить страну, форму присутствия компании, заявляемые работы и нужен ли СПК, аттестация или оба документа.',
+      'Проверить наличие переводов, легализации, полномочий подписанта и действующих документов в Беларуси.',
+      'Согласовать, какие реквизиты и сканы клиент даст для экспертной проверки; не оценивать легализацию самостоятельно.',
+      'Подготовить КП по подтверждённому маршруту и договориться о сроке передачи документов.'
+    ],
+    'windows-doors':[
+      'Уточнить материал изделий, назначение, номенклатуру, производство и цель документа.',
+      'Проверить действующие сертификаты, декларации, ТУ, протоколы и документы производства; выявить сопутствующие услуги.',
+      'Передать эксперту описание и документы для выбора схемы, испытаний и возможного выезда.',
+      'Согласовать КП с разделением услуги, испытаний и датой следующего контакта.'
+    ],
+    paints:[
+      'Уточнить виды лакокрасочной продукции, номенклатуру, ТУ, изготовителя и рынок обращения.',
+      'Проверить действующие декларации, сертификаты, протоколы и сроки; выявить расширение номенклатуры или периодику.',
+      'Собрать каталог, ТУ и документы производства для эксперта; не проводить техническую оценку испытаний самостоятельно.',
+      'Согласовать маршрут, КП и дату получения подтверждённых вводных.'
+    ],
+    metal:[
+      'Уточнить, производство это или монтаж, тип изделий, процессы сварки, заказчика и цель: ОСП, сертификация или периодическая оценка.',
+      'Проверить действующие документы ОСП или сертификаты и срок периодической оценки; предлагать подготовку сварщиков и технологии только при подтверждённой потребности.',
+      'Собрать описание изделий, площадку, документы и срок для эксперта; технический состав определяет эксперт.',
+      'Согласовать КП после маршрута, отдельно обозначив испытания, выезд, внешние платежи и следующий шаг.'
+    ],
+    'tool-rental':[
+      'Уточнить инструмент, даты, объект, цель аренды и контакт получателя.',
+      'Проверить доступность, срок аренды и необходимость продления.',
+      'Согласовать договор, счёт или заказ без технической экспертизы.',
+      'Зафиксировать оплату и передачу офис-менеджеру с датой выдачи.'
+    ]
+  };
   function managerSalesWorkflow(course){
     const workspace=workspaceFor(course,'manager');
-    const first=workspace.flow[0]||`Уточнить задачу клиента по услуге «${course.title}»: цель, объект или продукт, срок и текущий статус документов.`;
-    const second=workspace.flow[1]||'Уточнить, какие действующие документы уже есть и каких сведений не хватает для точного предложения.';
-    const tips=workspace.tips||[];
-    const steps=[
-      first,
-      'Проверить действующие документы и реестры: есть ли периодика, продление, расширение или смежная услуга, которую клиенту можно предложить дополнительно.',
-      `${second} Менеджер не готовит заявление, перечень СИ или технический пакет — он фиксирует вводные для экспертной проверки.`,
-      'Подтвердить с экспертом маршрут при спорных условиях, подготовить КП по подтверждённому составу и зафиксировать в сделке конкретный следующий шаг, срок и ответственного.'
+    const steps=MANAGER_PRODUCT_SALES_ROUTES[course.id]||workspace.flow||[
+      `Уточнить задачу клиента по услуге «${course.title}»: цель, объект или продукт, срок и текущий статус документов.`,
+      'Проверить действующие документы и возможную периодику, продление, расширение или смежную услугу.',
+      'Собрать вводные клиента и передать спорные условия эксперту для подтверждения маршрута.',
+      'Подготовить КП по подтверждённому составу и зафиксировать следующий шаг, срок и ответственного.'
     ];
-    return `<section class="workspace-source manager-sales-workflow" id="workspace-flow"><div><h2>Ход работы менеджера</h2><p>Продажа услуги: диагностика, допродажа, КП и договорённость. Техническую подготовку ведёт эксперт.</p></div><ol>${steps.map(step=>`<li>${esc(step)}</li>`).join('')}</ol>${tips.length?`<div class="manager-sales-boundary"><b>Важно в разговоре</b><ul>${tips.map(tip=>`<li>${esc(tip)}</li>`).join('')}</ul></div>`:''}</section>`;
+    const tips=workspace.tips||[];
+    return `<section class="workspace-source manager-sales-workflow" id="workspace-flow"><div><h2>Ход работы менеджера</h2><p>Порядок продажи по материалам этой услуги: диагностика, релевантная допродажа, КП и договорённость. Техническую подготовку ведёт эксперт.</p></div><ol>${steps.map(step=>`<li>${esc(step)}</li>`).join('')}</ol>${tips.length?`<div class="manager-sales-boundary"><b>Важно в разговоре</b><ul>${tips.map(tip=>`<li>${esc(tip)}</li>`).join('')}</ul></div>`:''}</section>`;
   }
   function practiceFor(course){
     const productPractice=PRODUCT_PRACTICE[course?.id];
@@ -1756,7 +1848,8 @@
     state.inlineEditorPath=path;state.inlineEditorHtml='';state.inlineEditorError='';academyLoadInlineMaterial();render();
   };
   window.academyGovernance=async()=>{if((access?.role||state.role)!=='leader')return;state.page='governance';state.governanceError='';render();try{const [metaResponse,revisionsResponse,gapsResponse]=await Promise.all([fetch('/api/academy/material-metadata',{headers:authHeaders()}),fetch('/api/academy/revisions',{headers:authHeaders()}),fetch('/api/academy/knowledge-gaps',{headers:authHeaders()})]);const meta=await metaResponse.json(),revisions=await revisionsResponse.json(),gaps=await gapsResponse.json();if(!metaResponse.ok||!revisionsResponse.ok||!gapsResponse.ok)throw new Error('Не удалось загрузить контроль актуальности.');state.governanceMetadata=meta.metadata||{};state.governanceRevisions=revisions.revisions||[];state.governanceGaps=gaps.gaps||[];}catch(error){state.governanceError=error.message||'Не удалось загрузить контроль актуальности.';}render();window.scrollTo(0,0);};
-  window.academyCleanupTechnicalTrainees=async()=>{if((access?.role||state.role)!=='leader')return;if(!confirm('Удалить из реестра технические, тестовые и демонстрационные учётные записи? Реальные стажёры и их результаты останутся.'))return;try{const response=await fetch('/api/academy/trainees/cleanup',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:'{}'});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(await academySaveError(response,'Не удалось очистить технические записи.'));state.leaderError=data.removed?`Удалено технических записей: ${data.removed}.`:'Технических записей для удаления не найдено.';academyLeaderResults();}catch(error){state.leaderError=error.message||'Не удалось очистить технические записи.';render();}};
+  window.academyCleanupTechnicalTrainees=async()=>{if((access?.role||state.role)!=='leader')return;if(!confirm('Удалить из реестра технические, тестовые и демонстрационные учётные записи? Реальные стажёры и их результаты останутся.'))return;try{const response=await fetch('/api/academy/trainees/cleanup',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:'{}'});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error==='persistent_storage_unavailable'?'Постоянное хранилище временно недоступно: очистка не выполнена.':'Не удалось очистить технические записи.');state.leaderError=data.removed?`Удалено технических записей: ${data.removed}.`:'Технических записей для удаления не найдено.';academyLeaderResults();}catch(error){state.leaderError=error.message||'Не удалось очистить технические записи.';render();}};
+  window.academyRemoveTrainee=async candidateName=>{if((access?.role||state.role)!=='leader'||!candidateName)return;if(!confirm(`Удалить «${candidateName}» из реестра и удалить его сохранённые результаты? Это действие нельзя отменить.`))return;try{const response=await fetch('/api/academy/trainees/remove',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({candidate_name:candidateName})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error==='persistent_storage_unavailable'?'Постоянное хранилище временно недоступно: запись не удалена.':'Не удалось удалить запись стажёра.');state.leaderError=data.removed?`Удалены запись и результаты: ${candidateName}.`:`Запись «${candidateName}» не найдена в хранилище.`;academyLeaderResults();}catch(error){state.leaderError=error.message||'Не удалось удалить запись стажёра.';render();}};
   window.academySaveGovernance=async button=>{const card=button.closest('article'),target=card?.querySelector('[data-governance-target]')?.value||'',owner=card?.querySelector('[data-governance-owner]')?.value||'',reviewed_at=card?.querySelector('[data-governance-reviewed]')?.value||'',review_due=card?.querySelector('[data-governance-due]')?.value||'',status=card?.querySelector('[data-governance-status]')?.value||'';try{const response=await fetch('/api/academy/material-metadata',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({target,owner,reviewed_at,review_due,status})});const data=await response.json();if(!response.ok)throw new Error(await academySaveError(response,'Не удалось сохранить статус.'));state.governanceMetadata[target]=data.metadata;state.governanceError='Статус актуальности сохранён.';}catch(error){state.governanceError=error.message||'Не удалось сохранить статус.';}render();};
   window.academyRestoreRevision=async id=>{if(!confirm('Восстановить эту сохранённую версию? Текущая версия тоже попадёт в журнал.'))return;try{const response=await fetch('/api/academy/revisions/restore',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({id})});if(!response.ok)throw new Error(await academySaveError(response,'Не удалось восстановить версию.'));state.governanceError='Версия восстановлена.';academyGovernance();}catch(error){state.governanceError=error.message||'Не удалось восстановить версию.';render();}};
   window.academySourceEditor=()=>{if(!canEditBase())return;state.page='source-editor';state.sourceEditorPath=state.sourceEditorPath||editableSources()[0]||'';academyLoadSourceEditor();render();window.scrollTo(0,0);};
