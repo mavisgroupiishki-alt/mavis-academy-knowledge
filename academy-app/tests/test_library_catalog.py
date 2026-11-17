@@ -876,6 +876,16 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn('Вопросы без ответа в базе', source)
         self.assertIn('def academy_governance(self):', backend)
 
+    def test_day_one_general_information_has_a_permission_decision_map(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        styles = (server.ROOT / "trainee-flow.css").read_text(encoding="utf-8")
+
+        self.assertIn("function traineeGeneralInformationMap(course)", source)
+        self.assertIn("course?.id!=='tr-sheet-d1-02'", source)
+        self.assertIn("пусконаладка, демонтаж или снос", source)
+        self.assertIn("СПК + аттестат соответствия", source)
+        self.assertIn("permission-map-outcomes", styles)
+
     def test_governance_reads_independent_state_streams(self):
         class GovernanceHandler:
             headers = {}

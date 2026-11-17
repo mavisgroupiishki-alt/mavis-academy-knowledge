@@ -1,7 +1,7 @@
 /* Product Academy: internal reading, practice, completion and role access. */
 (function () {
   if (!document.getElementById('academy-exam-styles')) { const stylesheet=document.createElement('link'); stylesheet.id='academy-exam-styles'; stylesheet.rel='stylesheet'; stylesheet.href='exam.css?v=8.1'; document.head.appendChild(stylesheet); }
-  if (!document.getElementById('academy-trainee-flow-styles')) { const stylesheet=document.createElement('link'); stylesheet.id='academy-trainee-flow-styles'; stylesheet.rel='stylesheet'; stylesheet.href='trainee-flow.css?v=10.2'; document.head.appendChild(stylesheet); }
+  if (!document.getElementById('academy-trainee-flow-styles')) { const stylesheet=document.createElement('link'); stylesheet.id='academy-trainee-flow-styles'; stylesheet.rel='stylesheet'; stylesheet.href='trainee-flow.css?v=10.3'; document.head.appendChild(stylesheet); }
   const oldRender = window.render;
   const oldSetScreen = window.setScreen;
   const STAFF_ROLES = ['manager','expert','leader'];
@@ -1509,6 +1509,26 @@
     const assignment=course.assignment;if(!assignment)return '';
     return `<section class="workspace-source trainee-assignment" id="trainee-assignment"><div><span>ОБЯЗАТЕЛЬНОЕ ЗАДАНИЕ</span><h2>${esc(assignment.title||'Задание')}</h2><p>${esc(assignment.prompt||'Опишите выполненную работу прямо в поле ниже.')}</p></div><label>Ваш ответ<textarea id="trainee-assignment-answer" minlength="${Number(assignment.minLength)||20}" placeholder="Выполните конкретные пункты задания выше. Ответ сохранится в Academy и будет виден руководителю. Не вставляйте данные клиентов."></textarea></label><div class="editor-actions"><button class="reader-test" type="button" onclick="academySubmitTraineeAssignment('${course.id}')">Сохранить и отправить руководителю</button></div>${state.traineeSubmissionError?`<p class="exam-error">${esc(state.traineeSubmissionError)}</p>`:''}</section>`;
   }
+  function traineeGeneralInformationMap(course){
+    if(course?.id!=='tr-sheet-d1-02')return '';
+    return `<figure class="trainee-permission-map" id="trainee-permission-map">
+      <figcaption><span>БЫСТРАЯ СХЕМА</span><h2>Как понять, нужны ли разрешительные документы</h2><p>Сначала определяем вид работ. Не называйте клиенту документ, пока не проверены объект и вид работ.</p></figcaption>
+      <div class="permission-map-start">Клиент планирует работы в строительстве</div>
+      <div class="permission-map-arrow" aria-hidden="true">↓</div>
+      <section class="permission-map-question"><span>Вопрос 1</span><b>Это пусконаладка, демонтаж или снос здания / сооружения?</b></section>
+      <div class="permission-map-branches">
+        <article class="permission-map-result permission-map-result--no-docs"><span>ДА</span><h3>Разрешительные документы не требуются</h3><p>По материалу плитки: пусконаладочные, демонтажные работы и снос не требуют разрешительных документов.</p></article>
+        <article class="permission-map-next"><span>НЕТ</span><h3>Определяем вид работ и класс объекта</h3><p>Текущий ремонт или крупные работы: новое строительство, реконструкция, модернизация, капитальный ремонт.</p></article>
+      </div>
+      <section class="permission-map-question permission-map-question--second"><span>Вопрос 2</span><b>Работы относятся к крупным, объект — 1–4 класса сложности, а вид работ есть в перечне обязательной аттестации?</b></section>
+      <div class="permission-map-outcomes">
+        <article><span>ДА · все условия выполнены</span><h3>СПК + аттестат соответствия</h3><p>Аттестат нужен только при одновременном выполнении всех трёх условий.</p></article>
+        <article><span>НЕТ / 5-й класс / работы не подлежат аттестации</span><h3>Проверяем маршрут СПК</h3><p>В материале указано: СПК достаточно для 5-го класса и работ, не подлежащих аттестации.</p></article>
+        <article class="permission-map-warning"><span>Если данных нет</span><h3>Не обещаем документ</h3><p>Уточняем вид работ, объект, класс сложности и перечень работ до вывода для клиента.</p></article>
+      </div>
+      <p class="permission-map-note">Схема — краткая навигация по материалу плитки. Полный перечень работ и классы объекта проверяются по первоисточникам.</p>
+    </figure>`;
+  }
   function readerTraineeLegacy(course){
     const completed=lessonDone(course,0),path=(course.sources||[])[0]||'';
     const leaderPreview=canEditBase()&&isTraineeWorkspace();
@@ -1526,12 +1546,13 @@
       : imported
         ? traineePassportDocument(course.content)
         : safeRichHtml(course.content||'<p class="trainee-empty-copy">Материал ещё не добавлен.</p>');
+    const decisionMap=traineeGeneralInformationMap(course);
     const heading=editing?`<div class="trainee-live-heading"><label><span>Название плитки</span><input class="trainee-live-title-input" value="${esc(course.title||'')}" placeholder="Название плитки" oninput="academyLiveTraineeField('title',this.value)"></label><label><span>Краткое описание</span><textarea class="trainee-live-lead-input" rows="2" placeholder="Коротко: что будет в этой плитке" oninput="academyLiveTraineeField('lead',this.value)">${esc(course.lead||'')}</textarea></label></div>`:`<h1><i>${course.icon||'✓'}</i>${esc(course.title||'Новая плитка')}</h1><p>${esc(course.lead||'Материал для изучения по плану стажировки.')}</p>`;
     const dayIndex=traineeDays.findIndex(day=>day.courseIds.includes(course.id));
     const leaderActions=leaderPreview?`${editing?`<label class="trainee-live-placement">День<select onchange="academySetTraineeTileDay(this.value)"><option value="">Скрыта</option>${traineeDays.map((day,index)=>`<option value="${index}" ${dayIndex===index?'selected':''}>${index+1}</option>`).join('')}</select></label><button class="reader-test" type="button" onclick="academySaveTraineeTile()">Сохранить плитку</button><button class="reader-complete" type="button" onclick="academyToggleTraineeTileEdit()">Готово</button>`:`<button class="reader-edit" type="button" onclick="academyToggleTraineeTileEdit()">✎ Редактировать плитку</button>`}`:'';
     const practiceCopy=imported?`Проверьте понимание темы «${esc(course.title)}». Вопрос относится только к этой плитке.`:'Проверьте, что сможете применить материал в разговоре с клиентом.';
     const outlineCopy=editing?'Изменяйте название, описание и текст в самой плитке. После сохранения этот вид увидит стажёр.':imported?'Материал этой вкладки показан внутри Academy.':'Вся учебная информация находится в этой плитке. Изучите её, выполните задание и пройдите короткую проверку.';
-    return shell(`<button class="course-back" type="button" onclick="academyCatalog()">← К плану стажировки</button><header class="reader-head ${editing?'trainee-reader-editing':''}"><div><span>${esc(course.eyebrow||'ПЛАН СТАЖИРОВКИ')}</span>${heading}</div><div class="reader-actions">${leaderActions}<button class="reader-edit" type="button" onclick="academyCopyLink('${course.id}')">Скопировать ссылку</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя</button><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header><section class="reader-layout"><aside class="reader-outline"><b>${editing?'Редактирование в итоговом виде':'Материал стажировки'}</b><p>${outlineCopy}</p><a href="#trainee-material">Материал</a>${course.assignment?'<a href="#trainee-assignment">Задание</a>':''}<div class="reader-practice"><span>После чтения</span><b>${practiceCopy}</b><button type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></aside><article class="reader-content"><section id="trainee-material" class="course-document custom-tile-document">${content}${path?ownText:''}</section>${traineeAssignmentPanel(course)}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Материал изучен':'✓ Я изучил(а) этот материал'}</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></article></section>`);
+    return shell(`<button class="course-back" type="button" onclick="academyCatalog()">← К плану стажировки</button><header class="reader-head ${editing?'trainee-reader-editing':''}"><div><span>${esc(course.eyebrow||'ПЛАН СТАЖИРОВКИ')}</span>${heading}</div><div class="reader-actions">${leaderActions}<button class="reader-edit" type="button" onclick="academyCopyLink('${course.id}')">Скопировать ссылку</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя</button><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Изучено':'Отметить изученным'}</button></div></header><section class="reader-layout"><aside class="reader-outline"><b>${editing?'Редактирование в итоговом виде':'Материал стажировки'}</b><p>${outlineCopy}</p>${decisionMap?'<a href="#trainee-permission-map">Схема выбора</a>':''}<a href="#trainee-material">Материал</a>${course.assignment?'<a href="#trainee-assignment">Задание</a>':''}<div class="reader-practice"><span>После чтения</span><b>${practiceCopy}</b><button type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></aside><article class="reader-content">${decisionMap}<section id="trainee-material" class="course-document custom-tile-document">${content}${path?ownText:''}</section>${traineeAssignmentPanel(course)}<div class="reader-bottom"><button class="reader-complete ${completed?'is-done':''}" type="button" onclick="academyCompleteSource('${course.id}',0)">${completed?'✓ Материал изучен':'✓ Я изучил(а) этот материал'}</button><button class="reader-test" type="button" onclick="academyTest('${course.id}')">Проверить себя →</button></div></article></section>`);
   }
   function contactsReader(course){
     const path=(course.sources||[])[0]||'';
