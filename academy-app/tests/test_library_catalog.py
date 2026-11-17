@@ -1052,6 +1052,43 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("workers.dev", requested_urls[0])
         self.assertIn("example.supabase.co", requested_urls[1])
 
+    def test_cloudflare_malformed_response_falls_back_to_the_durable_supabase_store(self):
+        requested_urls = []
+
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return self.payload
+
+        def fake_urlopen(request, timeout):
+            requested_urls.append(request.full_url)
+            if "workers.dev" in request.full_url:
+                return Response(b"<html>temporary gateway response</html>")
+            return Response(b'[{"value":{"items":[]}}]')
+
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_WRITE_TOKEN": "cloudflare-token",
+            "ACADEMY_RESULTS_URL": "https://example.supabase.co",
+            "ACADEMY_RESULTS_SERVICE_KEY": "service-key",
+            "ACADEMY_RESULTS_WRITE_TOKEN": "results-token",
+        }, clear=False), patch.object(server, "urlopen", fake_urlopen):
+            payload = server.persistent_state_request("GET", "academy:material-metadata")
+
+        self.assertEqual(payload, {"value": {"items": []}})
+        self.assertEqual(len(requested_urls), 2)
+        self.assertIn("workers.dev", requested_urls[0])
+        self.assertIn("example.supabase.co", requested_urls[1])
+
     def test_cloudflare_keeps_all_editor_state_inside_the_existing_curriculum_key(self):
         stored = {"value": {"courses": [], "days": [], "planVersion": "test"}}
 

@@ -550,6 +550,7 @@ def persistent_state_request(method, key, value=None):
         try:
             with urlopen(request, timeout=15) as response:
                 raw = response.read()
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
         except HTTPError as exc:
             # Do not include URLs, headers or response bodies: they can contain
             # storage credentials.  The status is enough to diagnose a remote
@@ -561,9 +562,13 @@ def persistent_state_request(method, key, value=None):
             # use it for every Cloudflare HTTP failure, including 401/403,
             # rather than turning an editor action into a lost change.
             return supabase_state_request(method, key, value)
-        except (URLError, TimeoutError):
+        except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError):
+            # A proxy or a partially deployed Worker can answer 200 with an
+            # HTML/error payload. It is not a valid state response, so use
+            # the durable Supabase mirror just as we do for HTTP failures.
             return supabase_state_request(method, key, value)
-        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        if not isinstance(payload, dict):
+            return supabase_state_request(method, key, value)
         # A newly deployed Worker has no row for values stored by the former
         # backend.  Read that value once from Supabase; the next save migrates
         # it to Cloudflare without losing a trainee or a revision history.
