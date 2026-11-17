@@ -339,6 +339,28 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertNotIn("const roleFocus=", source)
         self.assertIn("window.academyAudience=", source)
 
+    def test_assistant_sends_signed_out_users_to_the_login_screen(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("academy-chat-login", source)
+        self.assertIn("Войти в Academy", source)
+        self.assertIn("if(!access){state.chat=false;state.login=true;return render();}", source)
+
+    def test_rex_source_snapshots_are_assistant_only_not_catalog_tiles(self):
+        project = server.ROOT.parent
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        snapshots = sorted((project / "99 INBOX" / "РЭКС").rglob("*.md"))
+
+        self.assertGreaterEqual(len(snapshots), 19)
+        self.assertNotIn("99 INBOX/РЭКС/", source)
+        searchable_paths = set(server.knowledge_paths())
+        for snapshot in snapshots:
+            self.assertIn("visibility: assistant_only", snapshot.read_text(encoding="utf-8"), snapshot)
+            self.assertIn(str(snapshot.relative_to(project)), searchable_paths, snapshot)
+
+        spk_results = server.search_knowledge_paths("новые правила с 11 марта 2026")
+        self.assertIn("99 INBOX/РЭКС/02 Продукты/09 Чек-лист СПК.md", spk_results)
+
     def test_every_manager_product_uses_a_dedicated_sales_route(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         routes = source.split("const MANAGER_PRODUCT_SALES_ROUTES=", 1)[1].split("function managerSalesWorkflow", 1)[0]
