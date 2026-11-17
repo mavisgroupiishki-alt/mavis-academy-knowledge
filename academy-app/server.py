@@ -21,7 +21,10 @@ KNOWLEDGE_TEXT_CACHE = {"at": 0, "texts": {}}
 COURSE_ACCESS_FILE = ROOT / "course-access.json"
 MAX_KNOWLEDGE_DOCUMENT_BYTES = 1_500_000
 MAX_TRAINEE_CURRICULUM_BYTES = 1_500_000
-ALLOWED_KNOWLEDGE_PREFIXES = ("02 PRODUCTS/", "03 SALES/", "04 EXPERT/", "06 BITRIX24/", "07 AI & AUTOMATION/", "09 SOP/")
+# `99 INBOX` is deliberately searchable by the assistant while it is being
+# cleaned. It has no catalogue tile, so its materials cannot accidentally
+# appear as a published Academy section.
+ALLOWED_KNOWLEDGE_PREFIXES = ("02 PRODUCTS/", "03 SALES/", "04 EXPERT/", "06 BITRIX24/", "07 AI & AUTOMATION/", "09 SOP/", "99 INBOX/")
 UNSAFE_KNOWLEDGE_TERMS = ("парол", "доступ", "ключ", "token", "secret", "credential")
 SENSITIVE_CONTENT_PATTERNS = (
     re.compile(r"(?i)\b(sk-[a-z0-9_-]{16,}|gsk_[a-z0-9_-]{16,}|cfut_[a-z0-9_-]{16,})\b"),
@@ -1511,6 +1514,46 @@ class Handler(SimpleHTTPRequestHandler):
         except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
+    def academy_governance(self):
+        """Load the three governance streams through one durable read.
+
+        The previous screen issued three concurrent state-store reads. On a
+        slow remote store, any one of those requests made the complete screen
+        fail. Cloudflare-backed Academy state already keeps these streams in
+        the curriculum envelope, so load it once and extract all three.
+        """
+        if access_role_from_header(self.headers) != "leader":
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            if persistent_state_config()[0] == "cloudflare":
+                envelope = cloudflare_curriculum_auxiliary_envelope()
+                auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
+                auxiliary = auxiliary if isinstance(auxiliary, dict) else {}
+                metadata_state = auxiliary.get("material_metadata", {"items": {}})
+                revisions_state = auxiliary.get("revisions", {"items": []})
+                events_state = auxiliary.get("academy_events", {"items": []})
+            else:
+                metadata_state = read_auxiliary_state("material_metadata", MATERIAL_METADATA_STORE, {"items": {}})
+                revisions_state = read_auxiliary_state("revisions", REVISIONS_STORE, {"items": []})
+                events_state = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+
+            metadata = metadata_state.get("items", {}) if isinstance(metadata_state, dict) else {}
+            revisions = revisions_state.get("items", []) if isinstance(revisions_state, dict) else []
+            events = events_state.get("items", []) if isinstance(events_state, dict) else []
+            visible_revisions = [
+                {field: item.get(field) for field in ("id", "scope", "key", "actor", "created_at")}
+                for item in reversed(revisions)
+                if isinstance(item, dict)
+            ][:20]
+            gaps = [
+                {field: item.get(field) for field in ("question", "candidate_name", "role", "created_at")}
+                for item in reversed(events)
+                if isinstance(item, dict) and item.get("type") == "knowledge_gap"
+            ][:100]
+            return self.respond_json({"metadata": metadata if isinstance(metadata, dict) else {}, "revisions": visible_revisions, "gaps": gaps})
+        except (OSError, URLError, HTTPError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+
     def trainee_profile(self):
         access = access_payload_from_header(self.headers)
         if not access or access["role"] != "trainee":
@@ -2081,6 +2124,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/academy/leader-results":
             return self.academy_leader_results()
+        if self.path == "/api/academy/governance":
+            return self.academy_governance()
         if self.path == "/api/academy/knowledge-gaps":
             return self.knowledge_gaps()
         if self.path == "/api/academy/trainee-profile":

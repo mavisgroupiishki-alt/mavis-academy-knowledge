@@ -339,6 +339,33 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertNotIn("const roleFocus=", source)
         self.assertIn("window.academyAudience=", source)
 
+    def test_every_manager_product_uses_a_dedicated_sales_route(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        routes = source.split("const MANAGER_PRODUCT_SALES_ROUTES=", 1)[1].split("function managerSalesWorkflow", 1)[0]
+        product_ids = (
+            "spk", "attestation", "iso-suot", "iso-37001", "licences", "mchs", "gpn",
+            "tr-ts", "product-cert", "sro", "foreign-spk-attestation", "windows-doors",
+            "paints", "metal", "tool-rental",
+        )
+        for course_id in product_ids:
+            self.assertRegex(routes, rf"    (?:'{re.escape(course_id)}'|{re.escape(course_id)}):\[", course_id)
+        self.assertIn("менеджер не выбирает форму оценки", routes)
+        self.assertIn("не запрашивает СИ", routes)
+
+    def test_expert_regulations_are_separate_catalog_tiles(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        source_paths = (
+            "Регламент — принятие клиента в работу.md",
+            "Регламент — пропущенные звонки.md",
+            "Регламент — опоздания.md",
+            "Регламент — передача информации оформителям.md",
+            "Регламент — выезды ISO и СУОТ.md",
+            "Регламент — сбор NPS.md",
+        )
+        for source_path in source_paths:
+            self.assertIn(source_path, source)
+            self.assertTrue((server.ROOT.parent / "09 SOP" / source_path).is_file(), source_path)
+
     def test_staff_reader_shows_primary_source_instead_of_static_summary(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         reader = source.rsplit("  function reader(){", 1)[-1].split("  function tileAttachmentsEditor", 1)[0]
@@ -822,9 +849,43 @@ class PersistentStateTransportTests(unittest.TestCase):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
 
-        self.assertIn('/api/academy/knowledge-gaps', source)
+        self.assertIn('/api/academy/governance', source)
         self.assertIn('Вопросы без ответа в базе', source)
-        self.assertIn('def knowledge_gaps(self):', backend)
+        self.assertIn('def academy_governance(self):', backend)
+
+    def test_governance_reads_a_cloudflare_envelope_once(self):
+        class GovernanceHandler:
+            headers = {}
+
+            def respond_json(self, payload, code=200):
+                self.payload = payload
+                self.code = code
+                return payload
+
+        handler = GovernanceHandler()
+        envelope = {
+            server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY: {
+                "material_metadata": {"items": {"02 PRODUCTS/СПК.md": {"status": "actual"}}},
+                "revisions": {"items": [{"id": "rev-1", "scope": "document", "key": "02 PRODUCTS/СПК.md"}]},
+                "academy_events": {"items": [{"type": "knowledge_gap", "question": "Где чек-лист?"}]},
+            }
+        }
+        with patch.object(server, "access_role_from_header", return_value="leader"), patch.object(
+            server, "persistent_state_config", return_value=("cloudflare", "https://state", None, "token")
+        ), patch.object(server, "cloudflare_curriculum_auxiliary_envelope", return_value=envelope) as read_envelope:
+            payload = server.Handler.academy_governance(handler)
+
+        read_envelope.assert_called_once()
+        self.assertEqual(payload["metadata"]["02 PRODUCTS/СПК.md"]["status"], "actual")
+        self.assertEqual(payload["revisions"][0]["id"], "rev-1")
+        self.assertEqual(payload["gaps"][0]["question"], "Где чек-лист?")
+
+    def test_inbox_is_searchable_without_a_catalog_tile(self):
+        self.assertIn("99 INBOX/", server.ALLOWED_KNOWLEDGE_PREFIXES)
+        paths = server.knowledge_paths()
+        self.assertTrue(any(path.startswith("99 INBOX/") for path in paths))
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        self.assertNotIn("sources:products('99 INBOX'", source)
 
     def test_revision_log_failure_does_not_block_primary_save(self):
         with patch.object(server, "append_revision", side_effect=server.HTTPError("https://state", 400, "invalid_key", None, None)):
