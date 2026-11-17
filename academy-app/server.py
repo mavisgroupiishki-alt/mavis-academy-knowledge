@@ -75,11 +75,10 @@ REVISIONS_STORE = ROOT / "data" / "academy-revisions.json"
 ACADEMY_EVENTS_STORE = ROOT / "data" / "academy-events.json"
 TRAINEE_PROGRESS_STORE = ROOT / "data" / "academy-trainee-progress.json"
 PERSISTENT_STATE_CACHE = {}
-# The live Worker only accepts the original curriculum key.  Every other
-# durable Academy state, including document edits and catalogue edits, must
-# therefore live below that key.  Sending document_overrides or
-# library_catalog to their later standalone keys is what caused the editor to
-# report temporary storage failures even though curriculum itself could save.
+# Older Worker deployments stored editor state inside the curriculum document.
+# The current Worker accepts every key in PERSISTENT_STATE_KEYS. Keeping state
+# in separate rows prevents two independent editor saves from overwriting one
+# another through a shared read-modify-write envelope.
 CLOUDFLARE_AUXILIARY_STATE_NAMES = set(PERSISTENT_STATE_KEYS) - {"curriculum"}
 CLOUDFLARE_STATE_ENVELOPE = "mavis-academy-state-v1"
 CLOUDFLARE_AUXILIARY_ENVELOPE_KEY = "_mavis_academy_auxiliary"
@@ -573,25 +572,45 @@ def persistent_state_request(method, key, value=None):
         # backend.  Read that value once from Supabase; the next save migrates
         # it to Cloudflare without losing a trainee or a revision history.
         if method == "GET" and isinstance(payload, dict) and payload.get("value") is None:
-            legacy = supabase_state_request("GET", key)
-            if isinstance(legacy, dict) and legacy.get("value") is not None:
-                return legacy
+            legacy_url, legacy_key, legacy_token = supabase_state_fallback_config()
+            if legacy_url and legacy_key and legacy_token:
+                legacy = supabase_state_request("GET", key)
+                if isinstance(legacy, dict) and legacy.get("value") is not None:
+                    return legacy
         return payload
 
     return supabase_state_request(method, key, value)
 
 
 def cloudflare_curriculum_auxiliary_envelope():
-    """Read auxiliary state from the Worker key that is deployed in production.
-
-    The live Worker accepts the original curriculum key but not the later
-    standalone operational keys.  Keeping only the auxiliary namespace inside
-    that durable curriculum payload preserves all editor state and avoids a
-    separate failed storage request.
-    """
+    """Read the legacy shared Cloudflare envelope for one-time recovery."""
     raw = persistent_state_request("GET", PERSISTENT_STATE_KEYS["curriculum"])
     value = raw.get("value") if isinstance(raw, dict) else None
     return value if isinstance(value, dict) else {}
+
+
+def migrate_legacy_cloudflare_auxiliary_state(envelope=None):
+    """Copy legacy envelope values to their independent keys before overwrite.
+
+    This is deliberately non-destructive: existing independent state always
+    wins, and the curriculum is only rewritten after every legacy auxiliary
+    value has been confirmed by the remote store.
+    """
+    envelope = envelope if isinstance(envelope, dict) else cloudflare_curriculum_auxiliary_envelope()
+    auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
+    if not isinstance(auxiliary, dict):
+        return
+    for name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
+        if name not in auxiliary:
+            continue
+        key = PERSISTENT_STATE_KEYS[name]
+        current = persistent_state_request("GET", key)
+        current_value = current.get("value") if isinstance(current, dict) else None
+        if current_value is not None:
+            continue
+        saved = persistent_state_request("POST", key, auxiliary[name])
+        if not isinstance(saved, dict) or saved.get("value") != auxiliary[name]:
+            raise OSError("persistent_state_legacy_migration_unconfirmed")
 
 
 def read_persistent_state(name):
@@ -602,31 +621,18 @@ def read_persistent_state(name):
     if not backend:
         return None
 
-    if backend == "cloudflare" and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
+    key = PERSISTENT_STATE_KEYS[name]
+    try:
+        result = persistent_state_request("GET", key)
+    except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
+        result = None
+    value = result.get("value") if isinstance(result, dict) else None
+    # Preserve records written by the former shared-envelope implementation
+    # until they are migrated by the next curriculum save.
+    if backend == "cloudflare" and value is None and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
         envelope = cloudflare_curriculum_auxiliary_envelope()
         auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
         value = auxiliary.get(name) if isinstance(auxiliary, dict) else None
-        # Earlier releases attempted to save document edits and the catalogue
-        # under standalone keys.  Read that durable legacy value while the
-        # envelope has not yet been written, so deploying this fix never hides
-        # an existing editor change.  The next normal save migrates it into
-        # the curriculum envelope.
-        if value is None:
-            # Some deployed Worker revisions do not recognise the former
-            # standalone key.  That legacy read is optional: a 400 there must
-            # not prevent a new edit from being saved into the working
-            # curriculum envelope.
-            try:
-                legacy = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
-            except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
-                legacy = None
-            value = legacy.get("value") if isinstance(legacy, dict) else None
-        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
-        return value
-
-    key = PERSISTENT_STATE_KEYS[name]
-    result = persistent_state_request("GET", key)
-    value = result.get("value") if isinstance(result, dict) else None
     PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
     return value
 
@@ -634,24 +640,11 @@ def read_persistent_state(name):
 def write_persistent_state(name, value):
     backend = persistent_state_config()[0]
     if backend:
-        if backend == "cloudflare" and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
-            envelope = cloudflare_curriculum_auxiliary_envelope()
-            auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
-            envelope[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY] = auxiliary if isinstance(auxiliary, dict) else {}
-            envelope[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY][name] = value
-            saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS["curriculum"], envelope)
-            expected = envelope
-        elif backend == "cloudflare" and name == "curriculum":
+        if backend == "cloudflare" and name == "curriculum":
             previous = cloudflare_curriculum_auxiliary_envelope()
-            auxiliary = previous.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY)
-            payload = dict(value) if isinstance(value, dict) else value
-            if isinstance(payload, dict) and isinstance(auxiliary, dict):
-                payload[CLOUDFLARE_AUXILIARY_ENVELOPE_KEY] = auxiliary
-            saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], payload)
-            expected = payload
-        else:
-            saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], value)
-            expected = value
+            migrate_legacy_cloudflare_auxiliary_state(previous)
+        saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], value)
+        expected = value
         # A 2xx response without the value is not proof that the remote store
         # accepted the edit. Refuse to display a false success message.
         if not isinstance(saved, dict) or saved.get("value") != expected:
@@ -1520,27 +1513,13 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 
     def academy_governance(self):
-        """Load the three governance streams through one durable read.
-
-        The previous screen issued three concurrent state-store reads. On a
-        slow remote store, any one of those requests made the complete screen
-        fail. Cloudflare-backed Academy state already keeps these streams in
-        the curriculum envelope, so load it once and extract all three.
-        """
+        """Load independent governance streams with legacy-envelope recovery."""
         if access_role_from_header(self.headers) != "leader":
             return self.respond_json({"error": "forbidden"}, 403)
         try:
-            if persistent_state_config()[0] == "cloudflare":
-                envelope = cloudflare_curriculum_auxiliary_envelope()
-                auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
-                auxiliary = auxiliary if isinstance(auxiliary, dict) else {}
-                metadata_state = auxiliary.get("material_metadata", {"items": {}})
-                revisions_state = auxiliary.get("revisions", {"items": []})
-                events_state = auxiliary.get("academy_events", {"items": []})
-            else:
-                metadata_state = read_auxiliary_state("material_metadata", MATERIAL_METADATA_STORE, {"items": {}})
-                revisions_state = read_auxiliary_state("revisions", REVISIONS_STORE, {"items": []})
-                events_state = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
+            metadata_state = read_auxiliary_state("material_metadata", MATERIAL_METADATA_STORE, {"items": {}})
+            revisions_state = read_auxiliary_state("revisions", REVISIONS_STORE, {"items": []})
+            events_state = read_auxiliary_state("academy_events", ACADEMY_EVENTS_STORE, {"items": []})
 
             metadata = metadata_state.get("items", {}) if isinstance(metadata_state, dict) else {}
             revisions = revisions_state.get("items", []) if isinstance(revisions_state, dict) else []

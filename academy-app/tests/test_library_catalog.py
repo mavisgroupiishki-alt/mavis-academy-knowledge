@@ -5,6 +5,7 @@ import re
 import subprocess
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 
@@ -875,7 +876,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn('Вопросы без ответа в базе', source)
         self.assertIn('def academy_governance(self):', backend)
 
-    def test_governance_reads_a_cloudflare_envelope_once(self):
+    def test_governance_reads_independent_state_streams(self):
         class GovernanceHandler:
             headers = {}
 
@@ -885,19 +886,17 @@ class PersistentStateTransportTests(unittest.TestCase):
                 return payload
 
         handler = GovernanceHandler()
-        envelope = {
-            server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY: {
-                "material_metadata": {"items": {"02 PRODUCTS/СПК.md": {"status": "actual"}}},
-                "revisions": {"items": [{"id": "rev-1", "scope": "document", "key": "02 PRODUCTS/СПК.md"}]},
-                "academy_events": {"items": [{"type": "knowledge_gap", "question": "Где чек-лист?"}]},
-            }
+        streams = {
+            "material_metadata": {"items": {"02 PRODUCTS/СПК.md": {"status": "actual"}}},
+            "revisions": {"items": [{"id": "rev-1", "scope": "document", "key": "02 PRODUCTS/СПК.md"}]},
+            "academy_events": {"items": [{"type": "knowledge_gap", "question": "Где чек-лист?"}]},
         }
         with patch.object(server, "access_role_from_header", return_value="leader"), patch.object(
-            server, "persistent_state_config", return_value=("cloudflare", "https://state", None, "token")
-        ), patch.object(server, "cloudflare_curriculum_auxiliary_envelope", return_value=envelope) as read_envelope:
+            server, "read_auxiliary_state", side_effect=lambda name, *_: streams[name]
+        ) as read_state:
             payload = server.Handler.academy_governance(handler)
 
-        read_envelope.assert_called_once()
+        self.assertEqual(read_state.call_count, 3)
         self.assertEqual(payload["metadata"]["02 PRODUCTS/СПК.md"]["status"], "actual")
         self.assertEqual(payload["revisions"][0]["id"], "rev-1")
         self.assertEqual(payload["gaps"][0]["question"], "Где чек-лист?")
@@ -1111,8 +1110,8 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("workers.dev", requested_urls[0])
         self.assertIn("example.supabase.co", requested_urls[1])
 
-    def test_cloudflare_keeps_all_editor_state_inside_the_existing_curriculum_key(self):
-        stored = {"value": {"courses": [], "days": [], "planVersion": "test"}}
+    def test_cloudflare_saves_each_editor_state_under_its_own_key(self):
+        stored = {server.PERSISTENT_STATE_KEYS["curriculum"]: {"courses": [], "days": [], "planVersion": "test"}}
 
         class Response:
             def __enter__(self):
@@ -1122,12 +1121,15 @@ class PersistentStateTransportTests(unittest.TestCase):
                 return False
 
             def read(self):
-                return json.dumps(stored).encode("utf-8")
+                return json.dumps({"value": stored.get(self.key)}).encode("utf-8")
 
         def fake_urlopen(request, timeout):
+            key = parse_qs(urlparse(request.full_url).query).get("key", [""])[0]
             if request.get_method() == "PUT":
-                stored["value"] = json.loads(request.data.decode("utf-8"))["value"]
-            return Response()
+                stored[key] = json.loads(request.data.decode("utf-8"))["value"]
+            response = Response()
+            response.key = key
+            return response
 
         with patch.dict(server.os.environ, {
             "ACADEMY_STATE_BACKEND": "cloudflare",
@@ -1144,8 +1146,53 @@ class PersistentStateTransportTests(unittest.TestCase):
                 self.assertTrue(server.write_persistent_state(name, value))
                 server.PERSISTENT_STATE_CACHE.clear()
                 self.assertEqual(server.read_persistent_state(name), value)
-            self.assertEqual(stored["value"]["courses"], [])
-            self.assertEqual(stored["value"][server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY], values)
+            self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]]["courses"], [])
+            for name, value in values.items():
+                self.assertEqual(stored[server.PERSISTENT_STATE_KEYS[name]], value)
+            self.assertNotIn(
+                server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY,
+                stored[server.PERSISTENT_STATE_KEYS["curriculum"]],
+            )
+
+    def test_cloudflare_migrates_legacy_envelope_before_replacing_curriculum(self):
+        legacy_catalog = {"hidden": [], "overrides": {}, "custom": [{"id": "saved-tile"}], "archived": []}
+        stored = {
+            server.PERSISTENT_STATE_KEYS["curriculum"]: {
+                "courses": [{"id": "old"}],
+                server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY: {"library_catalog": legacy_catalog},
+            }
+        }
+
+        class Response:
+            def __init__(self, key):
+                self.key = key
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return json.dumps({"value": stored.get(self.key)}).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            key = parse_qs(urlparse(request.full_url).query).get("key", [""])[0]
+            if request.get_method() == "PUT":
+                stored[key] = json.loads(request.data.decode("utf-8"))["value"]
+            return Response(key)
+
+        replacement = {"courses": [{"id": "new"}], "days": [], "planVersion": "test"}
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_WRITE_TOKEN": "server-only-token",
+        }, clear=False), patch.object(server, "urlopen", fake_urlopen):
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertTrue(server.write_persistent_state("curriculum", replacement))
+
+        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["library_catalog"]], legacy_catalog)
+        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]], replacement)
 
     def test_cloudflare_reads_a_legacy_editor_value_until_it_is_saved_to_curriculum(self):
         with patch.dict(server.os.environ, {

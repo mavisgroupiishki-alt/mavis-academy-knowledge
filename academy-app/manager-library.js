@@ -277,7 +277,7 @@
   const TRAINEE_SHEET_COURSES = window.MAVIS_TRAINEE_PROGRAM?.courses || [];
   const state = {page:'catalog', course:'', tab:0, referenceView:false, readerNotice:'', documentRequestId:0, presentationSlide:0, presentationRequestId:0, test:false, login:false, loginMode:'register', role:'trainee', audience:'manager', traineeEdit:false, error:'', answer:null, order:[], orderChecked:false, matches:{}, matchChecked:false, caseChoices:{}, caseChecked:false, quizAnswers:{}, quizChecked:false, practiceSaving:false, practiceError:'', traineeSubmissionError:'', traineeDay:0, examVersion:1, examAnswers:{}, examWritten:'', examFinished:false, examSaving:false, examError:'', examResult:null, traineeProfile:null, traineeProfileLoading:false, traineeProfileError:'', leaderResults:null, leaderTrainees:[], leaderError:'', governanceMetadata:{},governanceRevisions:[],governanceGaps:[],governanceError:'', chat:false, chatInput:'', chatMessages:[], chatLoading:false, chatError:'', curriculumSaving:false, curriculumError:'', sourceEditorPath:'', sourceEditorHtml:'', sourceEditorLoading:false, sourceEditorSaving:false, sourceEditorError:'', inlineEditorPath:'', inlineEditorHtml:'', inlineEditorLoading:false, inlineEditorSaving:false, inlineEditorError:'', libraryCatalog:{hidden:[],overrides:{},custom:[]}, librarySourcePaths:[], librarySaving:false, libraryError:'', catalogQuery:'', catalogMatches:[], catalogSearchResults:[],catalogSearching:false};
   const progressKey = 'mavis-academy-product-progress-v2', accessKey = 'mavis-academy-access-v1', accountKey='mavis-academy-account-v1';
-  let progress = {}, access = null, account = null, searchTimer = null, searchRequestId = 0, librarySaveTimer = null, traineeProgressTimer = null;
+  let progress = {}, access = null, account = null, searchTimer = null, searchRequestId = 0, librarySaveTimer = null, librarySaveRequested = 0, librarySaveCompleted = 0, librarySaveInFlight = false, traineeProgressTimer = null;
   try { progress = JSON.parse(localStorage.getItem(progressKey) || '{}'); access = JSON.parse(sessionStorage.getItem(accessKey) || 'null'); account = JSON.parse(localStorage.getItem(accountKey) || 'null'); } catch (_) {}
   const saveProgress = () => localStorage.setItem(progressKey, JSON.stringify(progress));
   const roleName = role => role === 'leader' ? 'Руководитель' : role === 'expert' ? 'Эксперт' : role === 'trainee' ? 'Стажёр' : 'Менеджер';
@@ -1786,32 +1786,51 @@
     focusAttachmentInput(id);
     window.academyPersistLibraryCatalog(false);
   };
-  window.academyPersistLibraryCatalog=async(showConfirmation=true)=>{
-    if(!canEditBase())return;
+  const libraryCatalogSnapshot=()=>JSON.parse(JSON.stringify(ensureLibraryCatalog()));
+  async function flushLibraryCatalogSave(showConfirmation=false){
+    if(!canEditBase()||librarySaveInFlight||librarySaveCompleted>=librarySaveRequested)return false;
     syncLibraryEditor();
+    const revision=librarySaveRequested,snapshot=libraryCatalogSnapshot();
+    librarySaveInFlight=true;
     state.librarySaving=true;
     state.libraryError='';
     librarySaveStatus('Сохраняю изменения…');
     try{
-      const response=await fetch('/api/academy/library-catalog',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(ensureLibraryCatalog())});
+      const response=await fetch('/api/academy/library-catalog',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(snapshot)});
       if(!response.ok)throw new Error(await academySaveError(response,'Не удалось сохранить каталог.'));
       const data=await response.json();
-      state.libraryCatalog=data.catalog||state.libraryCatalog;
-      const drafts=(state.libraryCatalog.custom||[]).filter(tile=>!isPublishedLibraryTile(tile)).length;
-      librarySaveStatus(showConfirmation?'Сохранено в общей базе.':drafts?`Черновик сохранён. Добавьте название и текст или материал, чтобы показать его сотрудникам.`:'Изменения сохранены.');
+      librarySaveCompleted=Math.max(librarySaveCompleted,revision);
+      if(revision===librarySaveRequested){
+        state.libraryCatalog=data.catalog||state.libraryCatalog;
+        const drafts=(state.libraryCatalog.custom||[]).filter(tile=>!isPublishedLibraryTile(tile)).length;
+        librarySaveStatus(showConfirmation?'Сохранено в общей базе.':drafts?`Черновик сохранён. Добавьте название и текст или материал, чтобы показать его сотрудникам.`:'Изменения сохранены.');
+      }
+      return true;
     }catch(error){
       const message=error.message||'Не удалось сохранить каталог.';
       state.libraryError=message;
       librarySaveStatus(message,true);
+      return false;
+    }finally{
+      librarySaveInFlight=false;
+      state.librarySaving=false;
+      if(librarySaveCompleted<librarySaveRequested&&revision<librarySaveRequested)setTimeout(()=>flushLibraryCatalogSave(false),0);
     }
-    state.librarySaving=false;
+  }
+  window.academyPersistLibraryCatalog=async(showConfirmation=true)=>{
+    if(!canEditBase())return false;
+    if(librarySaveTimer){clearTimeout(librarySaveTimer);librarySaveTimer=null;}
+    syncLibraryEditor();
+    librarySaveRequested+=1;
+    return flushLibraryCatalogSave(showConfirmation);
   };
   window.academyQueueLibrarySave=()=>{
     if(!canEditBase())return;
     syncLibraryEditor();
+    librarySaveRequested+=1;
     if(librarySaveTimer)clearTimeout(librarySaveTimer);
     librarySaveStatus('Сохраняю изменения…');
-    librarySaveTimer=setTimeout(()=>window.academyPersistLibraryCatalog(false),450);
+    librarySaveTimer=setTimeout(()=>{librarySaveTimer=null;flushLibraryCatalogSave(false);},450);
   };
   window.academyRemoveLibraryTile=(id,custom)=>{
     syncLibraryEditor();
