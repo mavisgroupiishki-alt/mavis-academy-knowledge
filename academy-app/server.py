@@ -521,6 +521,27 @@ def supabase_state_request(method, key, value=None):
     return result
 
 
+def mirror_cloudflare_state_to_supabase(key, value):
+    """Keep a second durable copy of each Cloudflare-backed editor record.
+
+    Cloudflare D1 is the live primary store, but a Worker route, binding or
+    token can be changed independently from Render.  A successful primary
+    write is therefore mirrored to the existing private Supabase state store
+    when it is configured.  The mirror is intentionally best-effort: one
+    healthy durable store is better than rejecting an edit that Cloudflare has
+    already confirmed, and a later read can recover the mirrored value when
+    Cloudflare is unavailable.
+    """
+    try:
+        mirrored = supabase_state_request("POST", key, value)
+        if not isinstance(mirrored, dict) or mirrored.get("value") != value:
+            print("Academy state mirror failed: write unconfirmed", flush=True)
+    except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
+        # Never log the state payload or storage credentials. The Render log
+        # still records that the replica needs attention.
+        print("Academy state mirror failed: Supabase unavailable", flush=True)
+
+
 def allow_local_state():
     # Local JSON is useful only for an explicitly configured development run.
     # In production, reporting a save failure is safer than silently losing an
@@ -577,6 +598,10 @@ def persistent_state_request(method, key, value=None):
                 legacy = supabase_state_request("GET", key)
                 if isinstance(legacy, dict) and legacy.get("value") is not None:
                     return legacy
+        if method == "POST":
+            # A mirror prevents a later Worker outage or accidental D1 reset
+            # from making confirmed Academy edits disappear after a refresh.
+            mirror_cloudflare_state_to_supabase(key, value)
         return payload
 
     return supabase_state_request(method, key, value)
@@ -649,6 +674,12 @@ def write_persistent_state(name, value):
         # accepted the edit. Refuse to display a false success message.
         if not isinstance(saved, dict) or saved.get("value") != expected:
             raise OSError("persistent_state_write_unconfirmed")
+        # A 2xx PUT response alone is not a durable-save guarantee. Read the
+        # value back from the state abstraction (which also uses the mirror on
+        # a Cloudflare failure) before we tell an editor that it is saved.
+        confirmed = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+        if not isinstance(confirmed, dict) or confirmed.get("value") != expected:
+            raise OSError("persistent_state_readback_unconfirmed")
         PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
         return True
     if not allow_local_state():

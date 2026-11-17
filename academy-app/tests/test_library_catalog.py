@@ -1006,6 +1006,45 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(captured["headers"]["User-agent"], "Mavis-Academy-State/1.0")
         self.assertNotIn("server-only-token", captured["url"])
 
+    def test_confirmed_cloudflare_write_is_mirrored_to_supabase(self):
+        requested_urls = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return b'{"value":{"custom":[]}}' if "workers.dev" in requested_urls[-1] else b'[{"value":{"custom":[]}}]'
+
+        def fake_urlopen(request, timeout):
+            requested_urls.append(request.full_url)
+            return Response()
+
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_WRITE_TOKEN": "cloudflare-token",
+            "ACADEMY_RESULTS_URL": "https://example.supabase.co",
+            "ACADEMY_RESULTS_SERVICE_KEY": "service-key",
+            "ACADEMY_RESULTS_WRITE_TOKEN": "results-token",
+        }, clear=False), patch.object(server, "urlopen", fake_urlopen):
+            payload = server.persistent_state_request("POST", "academy:library-catalog", {"custom": []})
+
+        self.assertEqual(payload, {"value": {"custom": []}})
+        self.assertEqual(len(requested_urls), 2)
+        self.assertIn("workers.dev/state?key=academy%3Alibrary-catalog", requested_urls[0])
+        self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/rpc/academy_write_dashboard_state")
+
+    def test_persistent_write_requires_a_readback_match(self):
+        with patch.object(server, "persistent_state_config", return_value=("supabase", "https://example", "key", "token")), patch.object(
+            server, "persistent_state_request", side_effect=[{"value": {"custom": []}}, {"value": {"custom": ["stale"]}}]
+        ):
+            with self.assertRaisesRegex(OSError, "readback_unconfirmed"):
+                server.write_persistent_state("library_catalog", {"custom": []})
+
     def test_cloudflare_rejection_falls_back_to_existing_server_side_results_store(self):
         requested_urls = []
 
