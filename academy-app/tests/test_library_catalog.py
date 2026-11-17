@@ -351,7 +351,7 @@ class CourseSourceContractTests(unittest.TestCase):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         snapshots = sorted((project / "99 INBOX" / "РЭКС").rglob("*.md"))
 
-        self.assertGreaterEqual(len(snapshots), 19)
+        self.assertEqual(len(snapshots), 29)
         self.assertNotIn("99 INBOX/РЭКС/", source)
         searchable_paths = set(server.knowledge_paths())
         for snapshot in snapshots:
