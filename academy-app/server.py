@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import zlib
 from urllib.parse import urlparse, parse_qs, quote
 
 ROOT = Path(__file__).resolve().parent
@@ -75,6 +76,9 @@ REVISIONS_STORE = ROOT / "data" / "academy-revisions.json"
 ACADEMY_EVENTS_STORE = ROOT / "data" / "academy-events.json"
 TRAINEE_PROGRESS_STORE = ROOT / "data" / "academy-trainee-progress.json"
 PERSISTENT_STATE_CACHE = {}
+PERSISTENT_STATE_COMPRESSION_MARKER = "_mavis_state_codec"
+PERSISTENT_STATE_COMPRESSION_VALUE = "zlib-json-v1"
+PERSISTENT_STATE_COMPRESSION_THRESHOLD = 48_000
 # Older Worker deployments stored editor state inside the curriculum document.
 # The current Worker accepts every key in PERSISTENT_STATE_KEYS. Keeping state
 # in separate rows prevents two independent editor saves from overwriting one
@@ -438,6 +442,36 @@ def persistent_state_config():
     return (None, None, None, None)
 
 
+def encode_persistent_value(value):
+    """Keep large rich-text Academy records safely below Worker/D1 payload limits."""
+    raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(raw) < PERSISTENT_STATE_COMPRESSION_THRESHOLD:
+        return value
+    packed = zlib.compress(raw, level=6)
+    if len(packed) >= len(raw):
+        return value
+    return {
+        PERSISTENT_STATE_COMPRESSION_MARKER: PERSISTENT_STATE_COMPRESSION_VALUE,
+        "data": base64.b64encode(packed).decode("ascii"),
+    }
+
+
+def decode_persistent_value(value):
+    """Read both legacy plain JSON and the compact state representation."""
+    if not isinstance(value, dict) or value.get(PERSISTENT_STATE_COMPRESSION_MARKER) != PERSISTENT_STATE_COMPRESSION_VALUE:
+        return value
+    encoded = value.get("data")
+    if not isinstance(encoded, str) or len(encoded) > MAX_KNOWLEDGE_DOCUMENT_BYTES * 2:
+        raise ValueError("invalid_compressed_state")
+    try:
+        raw = zlib.decompress(base64.b64decode(encoded.encode("ascii"), validate=True))
+        if len(raw) > MAX_KNOWLEDGE_DOCUMENT_BYTES * 2:
+            raise ValueError("compressed_state_too_large")
+        return json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, zlib.error, json.JSONDecodeError) as exc:
+        raise ValueError("invalid_compressed_state") from exc
+
+
 def allow_local_state():
     # Local JSON is useful only for an explicitly configured development run.
     # In production, reporting a save failure is safer than silently losing an
@@ -480,7 +514,7 @@ def persistent_state_request(method, key, value=None):
 def cloudflare_curriculum_auxiliary_envelope():
     """Read the legacy shared Cloudflare envelope for one-time recovery."""
     raw = persistent_state_request("GET", PERSISTENT_STATE_KEYS["curriculum"])
-    value = raw.get("value") if isinstance(raw, dict) else None
+    value = decode_persistent_value(raw.get("value")) if isinstance(raw, dict) else None
     return value if isinstance(value, dict) else {}
 
 
@@ -521,7 +555,7 @@ def read_persistent_state(name):
         result = persistent_state_request("GET", key)
     except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
         result = None
-    value = result.get("value") if isinstance(result, dict) else None
+    value = decode_persistent_value(result.get("value")) if isinstance(result, dict) else None
     # Preserve records written by the former shared-envelope implementation
     # until they are migrated by the next curriculum save.
     if backend == "cloudflare" and value is None and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
@@ -538,8 +572,9 @@ def write_persistent_state(name, value):
         if backend == "cloudflare" and name == "curriculum":
             previous = cloudflare_curriculum_auxiliary_envelope()
             migrate_legacy_cloudflare_auxiliary_state(previous)
-        saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], value)
-        expected = value
+        encoded_value = encode_persistent_value(value)
+        saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], encoded_value)
+        expected = encoded_value
         # A 2xx response without the value is not proof that the remote store
         # accepted the edit. Refuse to display a false success message.
         if not isinstance(saved, dict) or saved.get("value") != expected:

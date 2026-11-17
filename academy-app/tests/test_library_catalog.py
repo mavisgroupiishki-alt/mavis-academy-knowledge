@@ -850,6 +850,19 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertEqual(saved[0]["items"], state["items"])
         self.assertEqual(saved[0]["attempts"][0]["candidate_name"], "Анна")
 
+    def test_large_curriculum_round_trips_through_compact_state_value(self):
+        curriculum = {
+            "courses": [{"id": "test", "title": "Тема", "content": "Практический материал. " * 15000}],
+            "days": [{"title": "День 1", "courseIds": ["test"], "reviewCourseIds": []}] * 4,
+            "planVersion": "test",
+        }
+
+        packed = server.encode_persistent_value(curriculum)
+
+        self.assertEqual(packed[server.PERSISTENT_STATE_COMPRESSION_MARKER], "zlib-json-v1")
+        self.assertLess(len(json.dumps(packed)), len(json.dumps(curriculum, ensure_ascii=False)))
+        self.assertEqual(server.decode_persistent_value(packed), curriculum)
+
     def test_named_trainee_removal_is_exact(self):
         kept, removed = server.remove_named_trainee([
             {"candidate_name": "Анна"},
