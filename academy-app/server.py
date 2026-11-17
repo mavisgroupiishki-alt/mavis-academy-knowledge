@@ -472,6 +472,19 @@ def decode_persistent_value(value):
         raise ValueError("invalid_compressed_state") from exc
 
 
+def persistent_error_detail(exc):
+    """Return a safe storage diagnostic without leaking a URL, token or data."""
+    if isinstance(exc, HTTPError):
+        return f"http_{exc.code}"
+    if isinstance(exc, URLError):
+        return "network"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, ValueError):
+        return str(exc)[:80]
+    return type(exc).__name__.lower()
+
+
 def allow_local_state():
     # Local JSON is useful only for an explicitly configured development run.
     # In production, reporting a save failure is safer than silently losing an
@@ -1720,8 +1733,9 @@ class Handler(SimpleHTTPRequestHandler):
             if str(exc) == "state_not_configured":
                 return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
             return self.respond_json({"error": "invalid_curriculum"}, 400)
-        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
-            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError) as exc:
+            print(f"Academy curriculum save failed: {persistent_error_detail(exc)}", flush=True)
+            return self.respond_json({"error": "persistent_storage_unavailable", "storage_detail": persistent_error_detail(exc)}, 503)
 
     def save_document_override(self):
         if access_role_from_header(self.headers) not in STAFF_ROLES:
