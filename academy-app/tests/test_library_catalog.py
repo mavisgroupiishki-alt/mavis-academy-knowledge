@@ -171,6 +171,15 @@ class CourseSourceContractTests(unittest.TestCase):
 
         self.assertIn('static_path.endswith((".js", ".css"))', source)
 
+    def test_blank_library_drafts_are_saved_instead_of_being_discarded(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        persist = source.split("window.academyPersistLibraryCatalog=", 1)[1].split(
+            "window.academyQueueLibrarySave=", 1
+        )[0]
+        self.assertNotIn("incompleteLibraryTile()", persist)
+        self.assertIn("Черновик сохранён", persist)
+
     def test_server_and_client_use_the_same_trainee_plan_version(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         client_version = re.search(r"TRAINEE_PLAN_VERSION='([^']+)'", source)
