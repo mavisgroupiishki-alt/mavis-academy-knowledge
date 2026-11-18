@@ -907,8 +907,10 @@ def register_fallback_trainee(candidate_name):
 def register_trainee(candidate_name):
     """Persist every registered trainee in Cloudflare D1 at sign-in."""
     candidate_name = " ".join(str(candidate_name or "").split())[:80]
-    if len(candidate_name) < 2:
-        return
+    # QA and service sessions are allowed to authenticate but must never
+    # become employee cards in the leader dashboard.
+    if not is_real_trainee_name(candidate_name):
+        return True
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
         registry = read_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": []})
@@ -920,11 +922,12 @@ def register_trainee(candidate_name):
         else:
             items.append({"candidate_name": candidate_name, "first_seen_at": now, "last_seen_at": now})
         write_auxiliary_state("trainee_registry", TRAINEE_REGISTRY_STORE, {"items": items[-1000:]})
+        return True
     except (OSError, URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError, TypeError):
-        # Authentication stays available during a temporary storage outage;
-        # the client can show an explicit save error rather than pretending the
-        # registration was durable.
-        pass
+        # Do not let a real employee appear to have entered Academy when the
+        # durable register could not confirm it. The login route turns this
+        # into a visible retry prompt instead of silently losing the person.
+        return False
 
 
 def trainee_display_name(value):
@@ -933,7 +936,7 @@ def trainee_display_name(value):
 
 def is_real_trainee_name(value):
     name = trainee_display_name(value)
-    return len(name) >= 2 and not re.match(r"^(?:test|тест|проверка|диагностик|demo|демо|sample|техническ|technical|service|сервис|system|система|admin|administrator|mavis|undefined|null)[\s._-]*", name, re.IGNORECASE)
+    return len(name) >= 2 and not re.match(r"^(?:test|тест|проверка|диагностик|demo|демо|sample|техническ|technical|service|сервис|system|система|admin|administrator|mavis|qa(?:[\s._-]|$)|quality[\s._-]?assurance|academy[\s._-]?save|undefined|null)[\s._-]*", name, re.IGNORECASE)
 
 
 def remove_technical_trainees(items):
@@ -1428,6 +1431,49 @@ def validate_trainee_curriculum(payload):
         if not isinstance(review_ids, list) or any(str(course_id) not in ids for course_id in review_ids):
             raise ValueError("invalid_curriculum")
     return {"courses": courses, "days": days, "planVersion": plan_version}
+
+
+def merge_missing_trainee_tile(saved_curriculum, incoming_payload, tile_id):
+    """Add one newly introduced browser tile without replacing a saved programme.
+
+    New trainee lessons can ship in a frontend release while a leader already
+    has an edited programme in persistent storage.  The normal single-tile
+    save must accept that one new, validated tile; it must never overwrite the
+    leader's existing tiles, order, hidden status or review choices.
+    """
+    incoming = validate_trainee_curriculum(incoming_payload)
+    incoming_tile = next((course for course in incoming["courses"] if course.get("id") == tile_id), None)
+    if not incoming_tile:
+        raise ValueError("unknown_trainee_tile")
+    if not isinstance(saved_curriculum, dict) or not isinstance(saved_curriculum.get("courses"), list):
+        raise ValueError("trainee_curriculum_unavailable")
+
+    courses = [dict(course) for course in saved_curriculum["courses"] if isinstance(course, dict)]
+    if any(course.get("id") == tile_id for course in courses):
+        return {"courses": courses, "days": saved_curriculum.get("days", []), "planVersion": saved_curriculum.get("planVersion", "")}
+    if len(courses) >= 80:
+        raise ValueError("invalid_curriculum")
+    courses.append(dict(incoming_tile))
+
+    saved_days = saved_curriculum.get("days", [])
+    if not isinstance(saved_days, list) or len(saved_days) != 4:
+        raise ValueError("invalid_trainee_tile")
+    days = []
+    for index, saved_day in enumerate(saved_days):
+        if not isinstance(saved_day, dict):
+            raise ValueError("invalid_trainee_tile")
+        day = dict(saved_day)
+        course_ids = [str(course_id) for course_id in day.get("courseIds", []) if str(course_id) != tile_id]
+        review_ids = [str(course_id) for course_id in day.get("reviewCourseIds", []) if str(course_id) != tile_id]
+        incoming_day = incoming["days"][index]
+        if tile_id in incoming_day.get("courseIds", []):
+            course_ids.append(tile_id)
+        if tile_id in incoming_day.get("reviewCourseIds", []):
+            review_ids.append(tile_id)
+        day["courseIds"] = course_ids
+        day["reviewCourseIds"] = review_ids
+        days.append(day)
+    return {"courses": courses, "days": days, "planVersion": saved_curriculum.get("planVersion", CURRENT_TRAINEE_PLAN_VERSION)}
 
 
 def course_access_manifest():
@@ -2063,7 +2109,15 @@ class Handler(SimpleHTTPRequestHandler):
             courses = [dict(course) if isinstance(course, dict) else course for course in curriculum["courses"]]
             index = next((item for item, course in enumerate(courses) if isinstance(course, dict) and course.get("id") == tile_id), -1)
             if index < 0:
-                raise ValueError("unknown_trainee_tile")
+                # A newly released local lesson (for example Bitrix24) is not
+                # in an older leader-edited programme yet. Merge only that
+                # validated tile from the browser programme, retain every
+                # saved edit, then continue through the usual verified write.
+                curriculum = merge_missing_trainee_tile(curriculum, payload.get("curriculum", {}), tile_id)
+                courses = [dict(course) if isinstance(course, dict) else course for course in curriculum["courses"]]
+                index = next((item for item, course in enumerate(courses) if isinstance(course, dict) and course.get("id") == tile_id), -1)
+                if index < 0:
+                    raise ValueError("unknown_trainee_tile")
             courses[index].update(updates)
             curriculum = {"courses": courses, "days": curriculum.get("days", []), "planVersion": curriculum.get("planVersion", "")}
             # The tile itself has been checked above.  Preserve the rest of the
@@ -2190,8 +2244,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond_json({"error": "invalid_credentials"}, 401)
             # A trainee appears in the leader list when they enter Academy,
             # rather than only after completing their first assessment.
-            if role == "trainee":
-                register_trainee(display_name)
+            if role == "trainee" and not register_trainee(display_name):
+                return self.respond_json({"error": "trainee_registration_unavailable"}, 503)
             return self.respond_json({"role": role, "display_name": display_name, "token": issue_access_token(role, display_name), "expires_in": ACCESS_TOKEN_TTL})
         except (ValueError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "invalid_request"}, 400)

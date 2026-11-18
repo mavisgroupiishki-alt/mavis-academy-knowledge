@@ -88,6 +88,18 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         ):
             self.assertIn(filename, enrichment)
 
+    def test_bitrix_tile_uses_the_full_local_regulation_with_original_screenshots(self):
+        content = (server.ROOT / "bitrix-regulation-content.js").read_text(encoding="utf-8")
+        enrichment = (server.ROOT / "trainee-media-enrichment.js").read_text(encoding="utf-8")
+
+        self.assertIn("window.MAVIS_BITRIX_REGULATION_HTML", content)
+        self.assertIn("Регламент работы менеджеров в Bitrix24", content)
+        self.assertIn("window.MAVIS_BITRIX_REGULATION_HTML", enrichment)
+        for number in range(1, 18):
+            filename = f"media/bitrix-regulation-{number:02d}.png"
+            self.assertIn(filename, content)
+            self.assertTrue((server.ROOT / filename).is_file(), filename)
+
     def test_accepts_a_complete_imported_lesson_larger_than_twenty_thousand_characters(self):
         curriculum = server.validate_trainee_curriculum({
             "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
@@ -223,8 +235,32 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("curriculum:{courses:curriculum.courses", save)
         self.assertIn("!saved?.saved||!saved?.verified", save)
         self.assertIn("def save_trainee_tile(self):", backend)
+        self.assertIn("merge_missing_trainee_tile(curriculum, payload.get(\"curriculum\", {}), tile_id)", backend)
         self.assertIn('"reason": detail', backend)
         self.assertIn("body.reason==='unknown_trainee_tile'", client)
+
+    def test_live_tile_save_merges_a_new_browser_tile_into_the_saved_programme(self):
+        saved = {
+            "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
+            "courses": [{"id": "existing", "title": "Старый", "eyebrow": "День 1", "lead": "", "content": "<p>Старый материал</p>"}],
+            "days": [{"title": f"День {number}", "courseIds": ["existing"] if number == 1 else [], "reviewCourseIds": []} for number in range(1, 5)],
+        }
+        incoming = {
+            "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
+            "courses": [*saved["courses"], {"id": "tr-sheet-d2-bitrix24", "title": "Работа с Bitrix24", "eyebrow": "День 2", "lead": "", "content": "<p>Видео и регламент</p>"}],
+            "days": [saved["days"][0], {"title": "День 2", "courseIds": ["tr-sheet-d2-bitrix24"], "reviewCourseIds": []}, saved["days"][2], saved["days"][3]],
+        }
+
+        merged = server.merge_missing_trainee_tile(saved, incoming, "tr-sheet-d2-bitrix24")
+
+        self.assertEqual([course["id"] for course in merged["courses"]], ["existing", "tr-sheet-d2-bitrix24"])
+        self.assertEqual(merged["days"][1]["courseIds"], ["tr-sheet-d2-bitrix24"])
+
+    def test_rich_editor_offers_persistent_pastel_and_word_like_controls(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        for label in ("Копировать формат", "Вставить формат", "Шрифт", "Меньше", "Больше", "Жёлтый", "Мята", "Розовый"):
+            self.assertIn(label, source)
 
     def test_legacy_shared_curriculum_is_migrated_without_erasing_envelope(self):
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
@@ -927,6 +963,15 @@ class PersistentStateTransportTests(unittest.TestCase):
 
         self.assertEqual([item["candidate_name"] for item in kept], ["Анна"])
         self.assertEqual(removed, 2)
+
+    def test_qa_save_account_is_not_a_real_trainee(self):
+        self.assertFalse(server.is_real_trainee_name("qa-academy-save"))
+
+    def test_real_trainee_registration_never_swallows_a_storage_failure(self):
+        with patch.object(server, "read_auxiliary_state", return_value={"items": []}), patch.object(
+            server, "write_auxiliary_state", side_effect=OSError("storage down")
+        ):
+            self.assertFalse(server.register_trainee("Анна"))
 
     def test_technical_trainee_results_are_removed_with_the_registry_entries(self):
         kept, removed = server.remove_technical_trainee_rows([
