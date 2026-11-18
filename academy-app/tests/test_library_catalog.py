@@ -198,6 +198,11 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("!saved?.saved||!saved?.verified", save)
         self.assertIn("def save_trainee_tile(self):", backend)
 
+    def test_legacy_shared_curriculum_is_migrated_without_erasing_envelope(self):
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+        self.assertIn("def migrate_legacy_shared_state_value(name):", backend)
+        self.assertIn("The original envelope is deliberately left untouched", backend)
+
     def test_static_editor_assets_are_not_served_from_an_old_browser_cache(self):
         source = (server.ROOT / "server.py").read_text(encoding="utf-8")
 

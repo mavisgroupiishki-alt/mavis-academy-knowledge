@@ -608,6 +608,30 @@ def read_cloudflare_shared_state(name):
     return states.get(name) if isinstance(states, dict) else None
 
 
+def migrate_legacy_shared_state_value(name):
+    """Copy one old shared-envelope record to its independent Worker key.
+
+    The Worker now supports separate rows. Some production data was written
+    before that update into the catalogue envelope. A restart must not make a
+    saved trainee programme look absent simply because its new row is empty.
+    The original envelope is deliberately left untouched during this gradual,
+    non-destructive migration.
+    """
+    if name == "library_catalog":
+        return None
+    value = read_cloudflare_shared_state(name)
+    if value is None:
+        return None
+    encoded_value = encode_persistent_value(value)
+    saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], encoded_value)
+    if not isinstance(saved, dict) or saved.get("value") != encoded_value:
+        raise OSError("persistent_state_legacy_shared_migration_unconfirmed")
+    confirmed = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+    if not isinstance(confirmed, dict) or confirmed.get("value") != encoded_value:
+        raise OSError("persistent_state_legacy_shared_readback_unconfirmed")
+    return value
+
+
 def write_cloudflare_shared_states(updates):
     """Atomically persist one or more Academy streams in the Worker envelope.
 
@@ -679,6 +703,13 @@ def read_persistent_state(name):
         value = states.get(name) if isinstance(states, dict) else None
     # Preserve records written by the former shared-envelope implementation
     # until they are migrated by the next curriculum save.
+    if backend == "cloudflare" and value is None and not cloudflare_uses_shared_state():
+        try:
+            legacy_shared_value = migrate_legacy_shared_state_value(name)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
+            legacy_shared_value = None
+        if legacy_shared_value is not None:
+            value = legacy_shared_value
     if backend == "cloudflare" and value is None and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
         envelope = cloudflare_curriculum_auxiliary_envelope()
         auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
