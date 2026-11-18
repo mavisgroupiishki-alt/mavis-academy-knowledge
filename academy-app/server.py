@@ -428,11 +428,11 @@ def access_role_from_header(headers):
 
 
 def persistent_state_config():
-    """Return the only production state store: Cloudflare Worker + D1.
+    """Return the configured primary state store.
 
-    The browser never receives the Worker token.  Supabase is deliberately not
-    a fallback: a billing error there must never make a confirmed D1 edit look
-    unsaved or split Academy data between two stores.
+    Cloudflare remains the current primary. The dashboard's existing guarded
+    Supabase RPC is retained as a server-side recovery path when Cloudflare is
+    unavailable, so an editor action is not lost because one provider is down.
     """
     backend = os.getenv("ACADEMY_STATE_BACKEND", "cloudflare").lower()
     # The Worker secret is named ACADEMY_STATE_TOKEN. Earlier Academy
@@ -445,7 +445,66 @@ def persistent_state_config():
     if backend == "cloudflare":
         url = os.getenv("ACADEMY_STATE_URL", "").rstrip("/")
         return (backend, url, None, access_token) if url and access_token else (None, None, None, None)
+    if backend == "supabase":
+        url, api_key, dashboard_token = dashboard_state_config()
+        return (backend, url, api_key, dashboard_token) if url and api_key and dashboard_token else (None, None, None, None)
     return (None, None, None, None)
+
+
+def dashboard_state_config():
+    """Return the server-only RPC connection already used by the dashboard."""
+    url = os.getenv("ACADEMY_RESULTS_URL", "").rstrip("/")
+    api_key = os.getenv("ACADEMY_RESULTS_SERVICE_KEY", "")
+    access_token = os.getenv("ACADEMY_RESULTS_WRITE_TOKEN", "")
+    return (url, api_key, access_token) if url and api_key and access_token else (None, None, None)
+
+
+def dashboard_state_request(method, key, value=None):
+    """Read or write Academy state via the dashboard's guarded Supabase RPC."""
+    url, api_key, access_token = dashboard_state_config()
+    if not url or not api_key or not access_token:
+        raise ValueError("dashboard_state_not_configured")
+    function = "academy_get_dashboard_state" if method == "GET" else "academy_write_dashboard_state"
+    payload = {"p_access_token": access_token, "p_key": key}
+    if method == "POST":
+        payload["p_value"] = value
+    request = Request(
+        url + "/rest/v1/rpc/" + function,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "apikey": api_key,
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            raw = response.read()
+    except HTTPError as exc:
+        print(f"Academy dashboard state store failed: http_{exc.code}", flush=True)
+        raise
+    except URLError:
+        print("Academy dashboard state store failed: network", flush=True)
+        raise
+    result = json.loads(raw.decode("utf-8")) if raw else []
+    if isinstance(result, list):
+        first = result[0] if result else {}
+        return {"value": first.get("value") if isinstance(first, dict) else None}
+    if not isinstance(result, dict):
+        raise ValueError("invalid_dashboard_state_response")
+    return result
+
+
+def dashboard_state_fallback(method, key, value, cloudflare_error):
+    """Use the established dashboard store only after a Cloudflare outage."""
+    if not all(dashboard_state_config()):
+        raise cloudflare_error
+    print(
+        f"Academy state store recovery: cloudflare {persistent_error_detail(cloudflare_error)}; dashboard RPC",
+        flush=True,
+    )
+    return dashboard_state_request(method, key, value)
 
 
 def encode_persistent_value(value):
@@ -520,6 +579,8 @@ def persistent_state_request(method, key, value=None):
     backend, url, api_key, access_token = persistent_state_config()
     if not backend or not url or not access_token:
         raise ValueError("state_not_configured")
+    if backend == "supabase":
+        return dashboard_state_request(method, key, value)
     if backend != "cloudflare":
         raise ValueError("state_not_configured")
     body = json.dumps({"value": value}, ensure_ascii=False).encode("utf-8") if method == "POST" else None
@@ -551,7 +612,10 @@ def persistent_state_request(method, key, value=None):
             pass
         exc.academy_storage_detail = detail
         print(f"Academy state store failed: cloudflare {detail}", flush=True)
-        raise
+        return dashboard_state_fallback(method, key, value, exc)
+    except (URLError, TimeoutError) as exc:
+        print(f"Academy state store failed: cloudflare {persistent_error_detail(exc)}", flush=True)
+        return dashboard_state_fallback(method, key, value, exc)
     if not isinstance(payload, dict):
         raise ValueError("invalid_state_response")
     return payload
