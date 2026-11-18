@@ -2199,7 +2199,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-Robots-Tag", "noindex, nofollow")
-        if self.path.split("?", 1)[0] in {"/", "/index.html"}:
+        static_path = self.path.split("?", 1)[0]
+        if static_path in {"/", "/index.html"} or static_path.endswith((".js", ".css")):
             self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 

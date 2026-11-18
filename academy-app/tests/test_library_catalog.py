@@ -149,6 +149,28 @@ class LibraryCatalogValidationTests(unittest.TestCase):
 
 
 class CourseSourceContractTests(unittest.TestCase):
+    def test_editor_retries_a_protected_save_after_session_expiry(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("async function renewAcademyAccess()", source)
+        self.assertIn("async function academyAuthorizedFetch(url,options={})", source)
+        self.assertIn("if(response.status!==401)return response", source)
+        self.assertIn("if(!await renewAcademyAccess())return response", source)
+        for endpoint in (
+            "/api/academy/document-overrides",
+            "/api/academy/library-catalog",
+            "/api/academy/trainee-curriculum",
+            "/api/academy/attempts",
+            "/api/academy/submissions",
+            "/api/academy/material-metadata",
+        ):
+            self.assertIn(f"academyAuthorizedFetch('{endpoint}'", source)
+
+    def test_static_editor_assets_are_not_served_from_an_old_browser_cache(self):
+        source = (server.ROOT / "server.py").read_text(encoding="utf-8")
+
+        self.assertIn('static_path.endswith((".js", ".css"))', source)
+
     def test_server_and_client_use_the_same_trainee_plan_version(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         client_version = re.search(r"TRAINEE_PLAN_VERSION='([^']+)'", source)
