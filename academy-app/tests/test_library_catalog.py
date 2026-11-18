@@ -81,6 +81,7 @@ class LibraryCatalogValidationTests(unittest.TestCase):
         for filename in (
             "spk-10-days.mp4",
             "attestation-3-weeks.mp4",
+            "iso-fast-implementation.mp4",
             "mavis-group-overview.mp4",
             "bitrix-overdue-tasks.mp4",
             "workflow-policy-overhaul.pdf",

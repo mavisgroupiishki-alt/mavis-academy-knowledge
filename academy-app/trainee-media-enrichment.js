@@ -11,6 +11,7 @@
     appendOnce(byId('tr-sheet-d1-02'),'mavis-group-overview.mp4',`${localVideo('Видео-обучение','mavis-group-overview.mp4')}${decisionMap}`);
     appendOnce(byId('tr-sheet-d1-03'),'spk-10-days.mp4',localVideo('Видео: как получить свидетельство СПК за 10 дней','spk-10-days.mp4'));
     appendOnce(byId('tr-sheet-d1-04'),'attestation-3-weeks.mp4',localVideo('Видео: как пройти строительную аттестацию за 3 недели','attestation-3-weeks.mp4'));
+    appendOnce(byId('tr-sheet-d1-05'),'iso-fast-implementation.mp4',localVideo('Видео: как внедрить ISO быстро','iso-fast-implementation.mp4'));
     if(!byId(bitrixTile.id)){courses.push({...bitrixTile});const dayTwo=days[1];if(dayTwo){dayTwo.courseIds=Array.isArray(dayTwo.courseIds)?dayTwo.courseIds:[];dayTwo.courseIds.push(bitrixTile.id);}}
     return {courses,days};
   }
