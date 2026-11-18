@@ -207,6 +207,8 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("curriculum:{courses:curriculum.courses", save)
         self.assertIn("!saved?.saved||!saved?.verified", save)
         self.assertIn("def save_trainee_tile(self):", backend)
+        self.assertIn('"reason": detail', backend)
+        self.assertIn("body.reason==='unknown_trainee_tile'", client)
 
     def test_legacy_shared_curriculum_is_migrated_without_erasing_envelope(self):
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")

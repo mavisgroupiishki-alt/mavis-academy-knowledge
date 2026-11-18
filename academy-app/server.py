@@ -1975,9 +1975,17 @@ class Handler(SimpleHTTPRequestHandler):
                 write_local_json(CURRICULUM_STORE, curriculum)
             return self.respond_json({"saved": True, "verified": True, "curriculum": curriculum})
         except ValueError as exc:
-            if str(exc) == "state_not_configured":
+            detail = persistent_error_detail(exc)
+            if detail == "state_not_configured":
                 return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
-            return self.respond_json({"error": "invalid_trainee_tile"}, 400)
+            # A malformed answer from the state Worker must never be shown as
+            # a bad tile. It is a storage failure, and the editor must keep
+            # the leader's text on screen instead of suggesting it was saved.
+            if detail in {"invalid_state_response", "invalid_compressed_state", "compressed_state_too_large"}:
+                print(f"Academy trainee tile save failed: {detail}", flush=True)
+                return self.respond_json({"error": "persistent_storage_unavailable", "storage_detail": detail}, 503)
+            print(f"Academy trainee tile rejected: {detail}", flush=True)
+            return self.respond_json({"error": "invalid_trainee_tile", "reason": detail}, 400)
         except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError) as exc:
             print(f"Academy trainee tile save failed: {persistent_error_detail(exc)}", flush=True)
             return self.respond_json({"error": "persistent_storage_unavailable", "storage_detail": persistent_error_detail(exc)}, 503)
