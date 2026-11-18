@@ -1301,7 +1301,8 @@ def validate_document_override(payload):
 def validate_trainee_curriculum(payload):
     courses, days = payload.get("courses"), payload.get("days")
     plan_version = str(payload.get("planVersion", ""))
-    if not isinstance(courses, list) or not isinstance(days, list) or len(courses) > 80 or len(days) != 4:
+    if (plan_version != CURRENT_TRAINEE_PLAN_VERSION or not isinstance(courses, list)
+            or not isinstance(days, list) or len(courses) > 80 or len(days) != 4):
         raise ValueError("invalid_curriculum")
     ids = set()
     for course in courses:
@@ -1312,7 +1313,10 @@ def validate_trainee_curriculum(payload):
             raise ValueError("invalid_curriculum")
         ids.add(course_id)
         for key in ("title", "lead", "eyebrow", "content"):
-            if not isinstance(course.get(key, ""), str) or len(course.get(key, "")) > 20000:
+            # Imported Google Sheets lessons are intentionally complete. Some
+            # of them exceed the former 20k character limit, which made a
+            # completely valid programme impossible to save after any edit.
+            if not isinstance(course.get(key, ""), str) or len(course.get(key, "")) > MAX_KNOWLEDGE_DOCUMENT_BYTES:
                 raise ValueError("invalid_curriculum")
         if not is_safe_rich_text(course.get("content", "")):
             raise ValueError("invalid_curriculum")
@@ -1949,6 +1953,12 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError("invalid_trainee_tile")
                 updates["content"] = content
             curriculum = read_trainee_curriculum()
+            if not isinstance(curriculum, dict) or not isinstance(curriculum.get("courses"), list):
+                # A former shared-store version can be stale even though the
+                # browser has already loaded the approved current programme.
+                # Bootstrap it from that exact in-memory programme instead of
+                # rejecting the leader's first save and making the edit vanish.
+                curriculum = validate_trainee_curriculum(payload.get("curriculum", {}))
             if not isinstance(curriculum, dict) or not isinstance(curriculum.get("courses"), list):
                 raise ValueError("trainee_curriculum_unavailable")
             courses = [dict(course) if isinstance(course, dict) else course for course in curriculum["courses"]]

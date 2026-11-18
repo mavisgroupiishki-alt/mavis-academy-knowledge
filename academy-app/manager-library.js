@@ -1979,7 +1979,8 @@
     try{
       const tile={id:course.id,title:String(course.title||'').trim(),eyebrow:String(course.eyebrow||''),lead:String(course.lead||'')};
       if(course._contentEdited)tile.content=safeRichHtml(course.content||'');
-      const response=await academyAuthorizedFetch('/api/academy/trainee-tile-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tile})});
+      const curriculum=normalizeTraineeCurriculum(traineeCourses,traineeDays);
+      const response=await academyAuthorizedFetch('/api/academy/trainee-tile-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tile,curriculum:{courses:curriculum.courses,days:curriculum.days,planVersion:TRAINEE_PLAN_VERSION}})});
       if(!response.ok)throw new Error(await academySaveError(response,'Не удалось сохранить плитку.'));
       const saved=await response.json();
       if(!saved?.saved||!saved?.verified||!Array.isArray(saved.curriculum?.courses)||!Array.isArray(saved.curriculum?.days))throw new Error('Сервер не подтвердил сохранение плитки.');

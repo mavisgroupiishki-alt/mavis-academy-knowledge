@@ -72,6 +72,15 @@ class LibraryCatalogValidationTests(unittest.TestCase):
     def test_trainee_curriculum_limit_accepts_the_current_live_program_size(self):
         self.assertGreater(server.MAX_TRAINEE_CURRICULUM_BYTES, 831_889)
 
+    def test_accepts_a_complete_imported_lesson_larger_than_twenty_thousand_characters(self):
+        curriculum = server.validate_trainee_curriculum({
+            "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
+            "courses": [{"id": "imported-lesson", "title": "Урок", "lead": "", "eyebrow": "", "content": "<p>" + ("текст " * 5000) + "</p>"}],
+            "days": [{"courseIds": ["imported-lesson"], "reviewCourseIds": []}] * 4,
+        })
+
+        self.assertEqual(curriculum["courses"][0]["id"], "imported-lesson")
+
     def test_keeps_a_deleted_custom_tile_in_archive_for_restore(self):
         catalog = server.validate_library_catalog({
             "hidden": [],
@@ -195,6 +204,7 @@ class CourseSourceContractTests(unittest.TestCase):
             "window.academyLiveTraineeDocument", 1
         )[0]
         self.assertIn("/api/academy/trainee-tile-save", save)
+        self.assertIn("curriculum:{courses:curriculum.courses", save)
         self.assertIn("!saved?.saved||!saved?.verified", save)
         self.assertIn("def save_trainee_tile(self):", backend)
 
