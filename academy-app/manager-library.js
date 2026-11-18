@@ -1960,6 +1960,7 @@
     if(!canEditBase()||!isTraineeWorkspace())return;
     const course=current();if(!course)return;
     course[field]=field==='content'?safeRichHtml(value):String(value||'').trim();
+    if(field==='content')course._contentEdited=true;
   };
   window.academySetTraineeTileDay=value=>{
     if(!canEditBase()||!isTraineeWorkspace())return;
@@ -1976,7 +1977,8 @@
     if(!String(course.title||'').trim()){state.curriculumError='Укажите название плитки перед сохранением.';return render();}
     state.curriculumSaving=true;state.curriculumError='';render();
     try{
-      const tile={id:course.id,title:String(course.title||'').trim(),eyebrow:String(course.eyebrow||''),lead:String(course.lead||''),content:safeRichHtml(course.content||'')};
+      const tile={id:course.id,title:String(course.title||'').trim(),eyebrow:String(course.eyebrow||''),lead:String(course.lead||'')};
+      if(course._contentEdited)tile.content=safeRichHtml(course.content||'');
       const response=await academyAuthorizedFetch('/api/academy/trainee-tile-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tile})});
       if(!response.ok)throw new Error(await academySaveError(response,'Не удалось сохранить плитку.'));
       const saved=await response.json();
@@ -1993,6 +1995,7 @@
     // Editing an imported block turns this tile into a self-contained copy.
     // That is intentional: the saved view is precisely what the trainee saw.
     course.content=safeRichHtml(html);
+    course._contentEdited=true;
     course.sources=[];
     course.isCustomContent=true;
   };

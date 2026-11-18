@@ -1903,13 +1903,20 @@ class Handler(SimpleHTTPRequestHandler):
             if not re.fullmatch(r"[a-z0-9-]{2,80}", tile_id):
                 raise ValueError("invalid_trainee_tile")
             updates = {}
-            for field, limit in (("title", 140), ("eyebrow", 160), ("lead", 2000), ("content", MAX_KNOWLEDGE_DOCUMENT_BYTES)):
+            for field, limit in (("title", 140), ("eyebrow", 160), ("lead", 2000)):
                 value = tile.get(field)
                 if not isinstance(value, str) or len(value) > limit:
                     raise ValueError("invalid_trainee_tile")
                 updates[field] = value
-            if not updates["title"].strip() or not is_safe_rich_text(updates["content"]):
+            if not updates["title"].strip():
                 raise ValueError("invalid_trainee_tile")
+            # Text is optional in a compact card save. Renaming an imported
+            # lesson must not resubmit its untouched legacy HTML.
+            if "content" in tile:
+                content = tile["content"]
+                if not isinstance(content, str) or len(content) > MAX_KNOWLEDGE_DOCUMENT_BYTES or not is_safe_rich_text(content):
+                    raise ValueError("invalid_trainee_tile")
+                updates["content"] = content
             curriculum = read_trainee_curriculum()
             if not isinstance(curriculum, dict) or not isinstance(curriculum.get("courses"), list):
                 raise ValueError("trainee_curriculum_unavailable")
