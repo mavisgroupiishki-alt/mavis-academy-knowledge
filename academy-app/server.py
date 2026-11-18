@@ -1868,7 +1868,10 @@ class Handler(SimpleHTTPRequestHandler):
             append_revision_best_effort("curriculum", "trainee_curriculum", read_trainee_curriculum(), access_payload_from_header(self.headers).get("name", ""))
             if not write_persistent_state("curriculum", curriculum):
                 write_local_json(CURRICULUM_STORE, curriculum)
-            return self.respond_json({"saved": True, "curriculum": curriculum})
+            # ``write_persistent_state`` returns only after remote readback.
+            # Keep that fact in the response: the editor must never show a
+            # success state that has not survived the persistent store.
+            return self.respond_json({"saved": True, "verified": True, "curriculum": curriculum})
         except ValueError as exc:
             if str(exc) == "state_not_configured":
                 return self.respond_json({"error": "persistent_storage_not_configured"}, 503)

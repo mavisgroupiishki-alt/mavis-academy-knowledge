@@ -178,6 +178,14 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Не обновляйте страницу", client)
         self.assertIn("def save_tile(self):", backend)
         self.assertIn("write_persistent_states({", backend)
+
+    def test_staff_session_loads_saved_trainee_program_after_refresh(self):
+        client = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+        self.assertIn("if (access?.role) Promise.all([", client)
+        self.assertIn("loadCurriculum(),", client)
+        self.assertIn("!saved?.verified", client)
+        self.assertIn("Сохраняю и проверяю запись в постоянном хранилище", client)
         self.assertIn("def write_cloudflare_shared_states(updates):", backend)
 
     def test_static_editor_assets_are_not_served_from_an_old_browser_cache(self):
