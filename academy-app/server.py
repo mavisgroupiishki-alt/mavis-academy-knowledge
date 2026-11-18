@@ -608,12 +608,24 @@ def read_cloudflare_shared_state(name):
     return states.get(name) if isinstance(states, dict) else None
 
 
-def write_cloudflare_shared_state(name, value):
-    """Atomically preserve all Academy streams on an older Worker deployment."""
+def write_cloudflare_shared_states(updates):
+    """Atomically persist one or more Academy streams in the Worker envelope.
+
+    The production Worker exposes one compatible state key.  Saving a tile used
+    to write its text and catalogue card separately, which made an editor wait
+    for two complete remote round trips (plus the optional revision log).  A
+    grouped write keeps both pieces together: either both values pass remote
+    readback or the request is reported as failed.
+    """
+    if not isinstance(updates, dict) or not updates:
+        raise ValueError("invalid_persistent_state_updates")
+    unknown = set(updates) - set(PERSISTENT_STATE_KEYS)
+    if unknown:
+        raise ValueError("invalid_persistent_state_updates")
     with CLOUDFLARE_SHARED_STATE_LOCK:
         envelope = cloudflare_shared_state_envelope()
         states = dict(envelope.get("states", {})) if isinstance(envelope.get("states"), dict) else {}
-        states[name] = value
+        states.update(updates)
         saved_value = {
             CLOUDFLARE_COMPATIBILITY_STATE_FIELD: CLOUDFLARE_COMPATIBILITY_STATE_MARKER,
             "states": states,
@@ -626,8 +638,15 @@ def write_cloudflare_shared_state(name, value):
         if not isinstance(confirmed, dict) or confirmed.get("value") != encoded_value:
             raise OSError("persistent_state_readback_unconfirmed")
         PERSISTENT_STATE_CACHE.clear()
-        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+        now = time.time()
+        for name, value in updates.items():
+            PERSISTENT_STATE_CACHE[name] = {"at": now, "value": value}
         return True
+
+
+def write_cloudflare_shared_state(name, value):
+    """Persist one Academy stream through the compatible shared envelope."""
+    return write_cloudflare_shared_states({name: value})
 
 
 def read_persistent_state(name):
@@ -700,6 +719,28 @@ def write_persistent_state(name, value):
     if not allow_local_state():
         raise ValueError("state_not_configured")
     return False
+
+
+def write_persistent_states(updates):
+    """Persist related state values together when the Worker is configured.
+
+    The Cloudflare implementation has a verified shared envelope, so use it
+    directly instead of making independent writes that can be interrupted
+    between a document save and its tile-card update.
+    """
+    if not isinstance(updates, dict) or not updates:
+        raise ValueError("invalid_persistent_state_updates")
+    if set(updates) - set(PERSISTENT_STATE_KEYS):
+        raise ValueError("invalid_persistent_state_updates")
+    backend = persistent_state_config()[0]
+    if backend == "cloudflare":
+        enable_cloudflare_shared_state()
+        return write_cloudflare_shared_states(updates)
+    if not backend:
+        if not allow_local_state():
+            raise ValueError("state_not_configured")
+        return False
+    raise ValueError("state_not_configured")
 
 
 def write_local_json(path, value):
@@ -1362,6 +1403,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.save_trainee_curriculum()
         if self.path == "/api/academy/document-overrides":
             return self.save_document_override()
+        if self.path == "/api/academy/tile-save":
+            return self.save_tile()
         if self.path == "/api/academy/library-catalog":
             return self.save_library_catalog()
         if self.path == "/api/academy/submissions":
@@ -1852,6 +1895,48 @@ class Handler(SimpleHTTPRequestHandler):
             if str(exc) == "state_not_configured":
                 return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
             return self.respond_json({"error": "invalid_document_override"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
+            return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
+
+    def save_tile(self):
+        """Save the visible tile card and its document as one verified change."""
+        access = access_payload_from_header(self.headers)
+        if not access or access["role"] not in STAFF_ROLES:
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > MAX_KNOWLEDGE_DOCUMENT_BYTES + 140_000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            path, content = validate_document_override(payload)
+            catalog = validate_library_catalog(payload.get("catalog"))
+            overrides = read_document_overrides()
+            previous_document = overrides.get(path)
+            previous_catalog = read_library_catalog()
+            overrides[path] = content
+            # This performs a remote write plus a remote readback of the same
+            # envelope before success is returned to the browser.
+            write_persistent_states({
+                "document_overrides": overrides,
+                "library_catalog": catalog,
+            })
+            # Audit history is useful but must never keep the visible editor in
+            # a "saving" state after the primary data has been confirmed.
+            threading.Thread(
+                target=append_revision_best_effort,
+                args=("document", path, previous_document, access["name"]),
+                daemon=True,
+            ).start()
+            threading.Thread(
+                target=append_revision_best_effort,
+                args=("catalog", "library_catalog", previous_catalog, access["name"]),
+                daemon=True,
+            ).start()
+            return self.respond_json({"saved": True, "verified": True, "path": path, "catalog": catalog})
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
+            return self.respond_json({"error": "invalid_tile"}, 400)
         except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError):
             return self.respond_json({"error": "persistent_storage_unavailable"}, 503)
 

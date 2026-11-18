@@ -166,6 +166,20 @@ class CourseSourceContractTests(unittest.TestCase):
         ):
             self.assertIn(f"academyAuthorizedFetch('{endpoint}'", source)
 
+    def test_inline_tile_save_is_one_verified_request(self):
+        client = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+
+        save = client.split("window.academySaveInlineMaterial=", 1)[1].split(
+            "async function loadDocument", 1
+        )[0]
+        self.assertIn("/api/academy/tile-save", save)
+        self.assertIn("!payload.saved||!payload.verified", save)
+        self.assertIn("Не обновляйте страницу", client)
+        self.assertIn("def save_tile(self):", backend)
+        self.assertIn("write_persistent_states({", backend)
+        self.assertIn("def write_cloudflare_shared_states(updates):", backend)
+
     def test_static_editor_assets_are_not_served_from_an_old_browser_cache(self):
         source = (server.ROOT / "server.py").read_text(encoding="utf-8")
 
