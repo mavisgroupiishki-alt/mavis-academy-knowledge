@@ -6,7 +6,7 @@ import subprocess
 import unittest
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -1152,8 +1152,21 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("workers.dev/state?key=academy%3Alibrary-catalog", requested_urls[0])
 
     def test_persistent_write_requires_a_readback_match(self):
+        reads = {"count": 0}
+
+        def request(method, _key, value=None):
+            if method == "POST":
+                return {"value": value}
+            reads["count"] += 1
+            if reads["count"] == 1:
+                return {"value": None}
+            return {"value": {
+                server.CLOUDFLARE_COMPATIBILITY_STATE_FIELD: server.CLOUDFLARE_COMPATIBILITY_STATE_MARKER,
+                "states": {"library_catalog": {"custom": ["stale"]}},
+            }}
+
         with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://example", None, "token")), patch.object(
-            server, "persistent_state_request", side_effect=[{"value": {"custom": []}}, {"value": {"custom": ["stale"]}}]
+            server, "persistent_state_request", side_effect=request
         ):
             with self.assertRaisesRegex(OSError, "readback_unconfirmed"):
                 server.write_persistent_state("library_catalog", {"custom": []})
@@ -1280,7 +1293,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         }, clear=False), patch.object(server, "urlopen", fake_urlopen):
             self.assertTrue(server.write_persistent_state("curriculum", value))
 
-        self.assertEqual(saved["value"], value)
+        self.assertEqual(saved["value"]["states"]["curriculum"], value)
 
     def test_cloudflare_malformed_response_is_reported(self):
         class Response:
@@ -1301,7 +1314,7 @@ class PersistentStateTransportTests(unittest.TestCase):
             with self.assertRaises(json.JSONDecodeError):
                 server.persistent_state_request("GET", "academy:material-metadata")
 
-    def test_cloudflare_saves_each_editor_state_under_its_own_key(self):
+    def test_cloudflare_saves_each_editor_state_in_the_versioned_envelope(self):
         stored = {server.PERSISTENT_STATE_KEYS["curriculum"]: {"courses": [], "days": [], "planVersion": "test"}}
 
         class Response:
@@ -1339,13 +1352,13 @@ class PersistentStateTransportTests(unittest.TestCase):
                 self.assertEqual(server.read_persistent_state(name), value)
             self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]]["courses"], [])
             for name, value in values.items():
-                self.assertEqual(stored[server.PERSISTENT_STATE_KEYS[name]], value)
+                self.assertEqual(stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]["states"][name], value)
             self.assertNotIn(
                 server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY,
                 stored[server.PERSISTENT_STATE_KEYS["curriculum"]],
             )
 
-    def test_cloudflare_migrates_legacy_envelope_before_replacing_curriculum(self):
+    def test_cloudflare_preserves_legacy_rows_before_writing_the_versioned_envelope(self):
         legacy_catalog = {"hidden": [], "overrides": {}, "custom": [{"id": "saved-tile"}], "archived": []}
         stored = {
             server.PERSISTENT_STATE_KEYS["curriculum"]: {
@@ -1382,8 +1395,9 @@ class PersistentStateTransportTests(unittest.TestCase):
             server.PERSISTENT_STATE_CACHE.clear()
             self.assertTrue(server.write_persistent_state("curriculum", replacement))
 
-        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["library_catalog"]], legacy_catalog)
-        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]], replacement)
+        self.assertNotIn(server.PERSISTENT_STATE_KEYS["library_catalog"], stored)
+        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]]["courses"], [{"id": "old"}])
+        self.assertEqual(stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]["states"]["curriculum"], replacement)
 
     def test_cloudflare_reads_a_legacy_editor_value_until_it_is_saved_to_curriculum(self):
         with patch.dict(server.os.environ, {
@@ -1397,7 +1411,39 @@ class PersistentStateTransportTests(unittest.TestCase):
         ) as request:
             server.PERSISTENT_STATE_CACHE.clear()
             self.assertEqual(server.read_persistent_state("document_overrides"), {"legacy": "editor content"})
-            request.assert_called_once_with("GET", server.PERSISTENT_STATE_KEYS["document_overrides"])
+            self.assertEqual(request.call_args_list, [
+                call("GET", server.CLOUDFLARE_COMPATIBILITY_STATE_KEY),
+                call("GET", server.PERSISTENT_STATE_KEYS["document_overrides"]),
+            ])
+
+    def test_cloudflare_ignores_a_malformed_legacy_row_and_saves_to_v3(self):
+        stored = {
+            server.PERSISTENT_STATE_KEYS["library_catalog"]: {
+                server.PERSISTENT_STATE_COMPRESSION_MARKER: server.PERSISTENT_STATE_COMPRESSION_VALUE,
+                "data": "not-valid-compressed-state",
+            },
+        }
+
+        def request(method, key, value=None):
+            if method == "POST":
+                stored[key] = value
+            return {"value": stored.get(key)}
+
+        curriculum = {"courses": [{"id": "day-1"}], "days": [], "planVersion": "test"}
+        with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://example", None, "token")), patch.object(
+            server, "persistent_state_request", side_effect=request
+        ), patch.object(server, "CLOUDFLARE_SHARED_STATE_ENABLED", False):
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertIsNone(server.read_persistent_state("library_catalog"))
+            self.assertTrue(server.write_persistent_state("curriculum", curriculum))
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertEqual(server.read_persistent_state("curriculum"), curriculum)
+
+        self.assertEqual(
+            stored[server.PERSISTENT_STATE_KEYS["library_catalog"]]["data"],
+            "not-valid-compressed-state",
+        )
+        self.assertEqual(stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]["states"]["curriculum"], curriculum)
 
     def test_cloudflare_ignores_unavailable_legacy_editor_key(self):
         with patch.dict(server.os.environ, {

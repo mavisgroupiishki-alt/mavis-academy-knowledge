@@ -80,7 +80,10 @@ PERSISTENT_STATE_CACHE = {}
 PERSISTENT_STATE_COMPRESSION_MARKER = "_mavis_state_codec"
 PERSISTENT_STATE_COMPRESSION_VALUE = "zlib-json-v1"
 PERSISTENT_STATE_COMPRESSION_THRESHOLD = 48_000
-CLOUDFLARE_COMPATIBILITY_STATE_KEY = "academy:library-catalog"
+# Keep the live Academy state separate from the legacy catalogue row. The
+# latter may contain a malformed value from an older deployment; reading it
+# must never prevent a new editor save from reaching D1.
+CLOUDFLARE_COMPATIBILITY_STATE_KEY = "academy:state-v3"
 CLOUDFLARE_COMPATIBILITY_STATE_MARKER = "mavis-academy-shared-state-v2"
 CLOUDFLARE_COMPATIBILITY_STATE_FIELD = "_mavis_academy_shared_state"
 CLOUDFLARE_SHARED_STATE_LOCK = threading.RLock()
@@ -751,10 +754,18 @@ def read_persistent_state(name):
     if not backend:
         return None
 
-    if backend == "cloudflare" and cloudflare_uses_shared_state():
-        value = read_cloudflare_shared_state(name)
-        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
-        return value
+    if backend == "cloudflare":
+        # The v3 envelope is the only write path. Check it first on every
+        # fresh process, then fall back to legacy rows only when it has no
+        # value for this stream yet.
+        try:
+            shared_value = read_cloudflare_shared_state(name)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
+            shared_value = None
+        if shared_value is not None:
+            enable_cloudflare_shared_state()
+            PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": shared_value}
+            return shared_value
 
     key = PERSISTENT_STATE_KEYS[name]
     try:
@@ -766,7 +777,16 @@ def read_persistent_state(name):
             PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
             return value
         result = None
-    value = decode_persistent_value(result.get("value")) if isinstance(result, dict) else None
+    try:
+        value = decode_persistent_value(result.get("value")) if isinstance(result, dict) else None
+    except ValueError as exc:
+        # A malformed legacy row is not evidence that the user's new tile is
+        # invalid. Preserve that row untouched and use the bundled/default
+        # data until the first verified v3 save creates a clean envelope.
+        if backend != "cloudflare":
+            raise
+        print(f"Academy ignored malformed legacy state: {persistent_error_detail(exc)}", flush=True)
+        value = None
     if backend == "cloudflare" and name == "library_catalog" and isinstance(value, dict) and value.get(CLOUDFLARE_COMPATIBILITY_STATE_FIELD) == CLOUDFLARE_COMPATIBILITY_STATE_MARKER:
         enable_cloudflare_shared_state()
         states = value.get("states", {})
@@ -791,7 +811,10 @@ def read_persistent_state(name):
 def write_persistent_state(name, value):
     backend = persistent_state_config()[0]
     if backend:
-        if backend == "cloudflare" and cloudflare_uses_shared_state():
+        if backend == "cloudflare":
+            # Always use the versioned envelope. It makes a complete edit one
+            # D1 record and avoids legacy per-key data from blocking a save.
+            enable_cloudflare_shared_state()
             return write_cloudflare_shared_state(name, value)
         try:
             if backend == "cloudflare" and name == "curriculum":

@@ -8,6 +8,7 @@ const ALLOWED_KEYS = new Set([
   "academy:revisions",
   "academy:events",
   "academy:trainee-progress",
+  "academy:state-v3",
 ]);
 
 const json = (value, status = 200) => new Response(JSON.stringify(value), {
