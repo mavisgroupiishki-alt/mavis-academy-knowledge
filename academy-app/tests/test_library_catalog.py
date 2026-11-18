@@ -188,6 +188,16 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertIn("Сохраняю и проверяю запись в постоянном хранилище", client)
         self.assertIn("def write_cloudflare_shared_states(updates):", backend)
 
+    def test_live_trainee_tile_uses_a_verified_single_tile_save(self):
+        client = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+        save = client.split("window.academySaveTraineeTile=async()=>", 1)[1].split(
+            "window.academyLiveTraineeDocument", 1
+        )[0]
+        self.assertIn("/api/academy/trainee-tile-save", save)
+        self.assertIn("!saved?.saved||!saved?.verified", save)
+        self.assertIn("def save_trainee_tile(self):", backend)
+
     def test_static_editor_assets_are_not_served_from_an_old_browser_cache(self):
         source = (server.ROOT / "server.py").read_text(encoding="utf-8")
 

@@ -1974,7 +1974,18 @@
     const course=current();
     if(!course)return;
     if(!String(course.title||'').trim()){state.curriculumError='Укажите название плитки перед сохранением.';return render();}
-    await window.academySaveCurriculum();
+    state.curriculumSaving=true;state.curriculumError='';render();
+    try{
+      const tile={id:course.id,title:String(course.title||'').trim(),eyebrow:String(course.eyebrow||''),lead:String(course.lead||''),content:safeRichHtml(course.content||'')};
+      const response=await academyAuthorizedFetch('/api/academy/trainee-tile-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tile})});
+      if(!response.ok)throw new Error(await academySaveError(response,'Не удалось сохранить плитку.'));
+      const saved=await response.json();
+      if(!saved?.saved||!saved?.verified||!Array.isArray(saved.curriculum?.courses)||!Array.isArray(saved.curriculum?.days))throw new Error('Сервер не подтвердил сохранение плитки.');
+      const persisted=normalizeTraineeCurriculum(saved.curriculum.courses,saved.curriculum.days);
+      traineeCourses=persisted.courses;traineeDays=persisted.days;
+      state.curriculumError='Изменения сохранены и подтверждены постоянным хранилищем.';
+    }catch(error){state.curriculumError=error.message||'Не удалось сохранить плитку.';}
+    state.curriculumSaving=false;render();
   };
   window.academyLiveTraineeDocument=html=>{
     if(!canEditBase()||!isTraineeWorkspace())return;

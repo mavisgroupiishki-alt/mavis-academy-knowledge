@@ -1401,6 +1401,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.create_access()
         if self.path == "/api/academy/trainee-curriculum":
             return self.save_trainee_curriculum()
+        if self.path == "/api/academy/trainee-tile-save":
+            return self.save_trainee_tile()
         if self.path == "/api/academy/document-overrides":
             return self.save_document_override()
         if self.path == "/api/academy/tile-save":
@@ -1878,6 +1880,58 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond_json({"error": "invalid_curriculum"}, 400)
         except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError) as exc:
             print(f"Academy curriculum save failed: {persistent_error_detail(exc)}", flush=True)
+            return self.respond_json({"error": "persistent_storage_unavailable", "storage_detail": persistent_error_detail(exc)}, 503)
+
+    def save_trainee_tile(self):
+        """Persist one live trainee tile without revalidating unrelated tiles.
+
+        The programme can contain large imported lessons.  A leader editing one
+        visible tile should not lose that change because another, untouched
+        lesson contains legacy markup that a whole-programme save rejects.
+        """
+        if access_role_from_header(self.headers) not in STAFF_ROLES:
+            return self.respond_json({"error": "forbidden"}, 403)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 2 or length > MAX_KNOWLEDGE_DOCUMENT_BYTES + 100_000:
+                return self.respond_json({"error": "invalid_size"}, 413)
+            payload = json.loads(self.rfile.read(length))
+            tile = payload.get("tile")
+            if not isinstance(tile, dict):
+                raise ValueError("invalid_trainee_tile")
+            tile_id = str(tile.get("id", ""))
+            if not re.fullmatch(r"[a-z0-9-]{2,80}", tile_id):
+                raise ValueError("invalid_trainee_tile")
+            updates = {}
+            for field, limit in (("title", 140), ("eyebrow", 160), ("lead", 2000), ("content", MAX_KNOWLEDGE_DOCUMENT_BYTES)):
+                value = tile.get(field)
+                if not isinstance(value, str) or len(value) > limit:
+                    raise ValueError("invalid_trainee_tile")
+                updates[field] = value
+            if not updates["title"].strip() or not is_safe_rich_text(updates["content"]):
+                raise ValueError("invalid_trainee_tile")
+            curriculum = read_trainee_curriculum()
+            if not isinstance(curriculum, dict) or not isinstance(curriculum.get("courses"), list):
+                raise ValueError("trainee_curriculum_unavailable")
+            courses = [dict(course) if isinstance(course, dict) else course for course in curriculum["courses"]]
+            index = next((item for item, course in enumerate(courses) if isinstance(course, dict) and course.get("id") == tile_id), -1)
+            if index < 0:
+                raise ValueError("unknown_trainee_tile")
+            courses[index].update(updates)
+            curriculum = {"courses": courses, "days": curriculum.get("days", []), "planVersion": curriculum.get("planVersion", "")}
+            # The tile itself has been checked above.  Preserve the rest of the
+            # established programme verbatim, including older imported markup.
+            if not isinstance(curriculum["days"], list) or len(curriculum["days"]) != 4:
+                raise ValueError("invalid_trainee_tile")
+            if not write_persistent_state("curriculum", curriculum):
+                write_local_json(CURRICULUM_STORE, curriculum)
+            return self.respond_json({"saved": True, "verified": True, "curriculum": curriculum})
+        except ValueError as exc:
+            if str(exc) == "state_not_configured":
+                return self.respond_json({"error": "persistent_storage_not_configured"}, 503)
+            return self.respond_json({"error": "invalid_trainee_tile"}, 400)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, json.JSONDecodeError) as exc:
+            print(f"Academy trainee tile save failed: {persistent_error_detail(exc)}", flush=True)
             return self.respond_json({"error": "persistent_storage_unavailable", "storage_detail": persistent_error_detail(exc)}, 503)
 
     def save_document_override(self):
