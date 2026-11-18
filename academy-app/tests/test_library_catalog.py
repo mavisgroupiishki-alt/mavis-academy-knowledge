@@ -1192,6 +1192,62 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("workers.dev", requested_urls[0])
         self.assertEqual(requested_urls[1], "https://example.supabase.co/rest/v1/rpc/academy_get_dashboard_state")
 
+    def test_cloudflare_invalid_key_keeps_the_compatibility_recovery_path(self):
+        requested_urls = []
+        stored = {}
+
+        class Response:
+            def __init__(self, key):
+                self.key = key
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return json.dumps({"value": stored.get(self.key)}).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            requested_urls.append(request.full_url)
+            key = parse_qs(urlparse(request.full_url).query).get("key", [""])[0]
+            if "workers.dev" in request.full_url and key != server.CLOUDFLARE_COMPATIBILITY_STATE_KEY:
+                raise server.HTTPError(
+                    request.full_url,
+                    400,
+                    "invalid_key",
+                    None,
+                    io.BytesIO(b'{"error":"invalid_key"}'),
+                )
+            if "supabase.co" in request.full_url:
+                self.fail("invalid Worker keys must use the compatible Cloudflare key before dashboard fallback")
+            if request.get_method() == "PUT":
+                stored[key] = json.loads(request.data.decode("utf-8"))["value"]
+            return Response(key)
+
+        curriculum = {"courses": [{"id": "day-1"}], "days": [], "planVersion": "test"}
+        with patch.dict(server.os.environ, {
+            "ACADEMY_STATE_BACKEND": "cloudflare",
+            "ACADEMY_STATE_URL": "https://mavis-academy-state.example.workers.dev",
+            "ACADEMY_STATE_WRITE_TOKEN": "cloudflare-token",
+            "ACADEMY_RESULTS_URL": "https://example.supabase.co",
+            "ACADEMY_RESULTS_SERVICE_KEY": "service-key",
+            "ACADEMY_RESULTS_WRITE_TOKEN": "results-token",
+        }, clear=False), patch.object(server, "urlopen", fake_urlopen), patch.object(
+            server, "CLOUDFLARE_SHARED_STATE_ENABLED", False
+        ):
+            server.PERSISTENT_STATE_CACHE.clear()
+            self.assertTrue(server.write_persistent_state("curriculum", curriculum))
+            envelope = stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]
+            self.assertEqual(envelope["states"]["curriculum"], curriculum)
+            self.assertTrue(server.CLOUDFLARE_SHARED_STATE_ENABLED)
+
+        self.assertTrue(any(
+            parse_qs(urlparse(url).query).get("key", [""])[0] == server.CLOUDFLARE_COMPATIBILITY_STATE_KEY
+            for url in requested_urls
+        ))
+
     def test_fallback_write_requires_dashboard_readback(self):
         saved = {"value": None}
 

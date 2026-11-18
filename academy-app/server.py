@@ -612,6 +612,12 @@ def persistent_state_request(method, key, value=None):
             pass
         exc.academy_storage_detail = detail
         print(f"Academy state store failed: cloudflare {detail}", flush=True)
+        # An older Worker can reject new per-feature keys while continuing to
+        # accept the catalog key. Let the caller activate the compatibility
+        # envelope in that specific case; routing it through the dashboard
+        # fallback would mask the Worker error and prevent recovery.
+        if detail == "worker_invalid_key":
+            raise
         return dashboard_state_fallback(method, key, value, exc)
     except (URLError, TimeoutError) as exc:
         print(f"Academy state store failed: cloudflare {persistent_error_detail(exc)}", flush=True)

@@ -24,7 +24,7 @@
 
 ## Постоянное сохранение правок руководителя
 
-Основной канал Academy — Cloudflare Worker + D1. Если Worker временно недоступен, редактор автоматически использует тот же защищённый Supabase RPC, что и операционный дашборд, и делает обязательную обратную проверку записи перед сообщением об успехе. На Render должны быть заданы серверные секреты `ACADEMY_RESULTS_URL`, `ACADEMY_RESULTS_SERVICE_KEY` и `ACADEMY_RESULTS_WRITE_TOKEN`; браузер их не получает. Для Cloudflare также нужны `ACADEMY_STATE_URL` и `ACADEMY_STATE_TOKEN` (либо прежнее имя `ACADEMY_STATE_WRITE_TOKEN`).
+Основной канал Academy — Cloudflare Worker + D1. Если временно недоступен Worker, редактор использует тот же защищённый Supabase RPC, что и операционный дашборд, и делает обязательную обратную проверку записи перед сообщением об успехе. Если Worker отвечает `invalid_key` для нового ключа, Academy вместо Supabase сохраняет данные в совместимом контейнере под уже разрешённым ключом Cloudflare. На Render должны быть заданы серверные секреты `ACADEMY_RESULTS_URL`, `ACADEMY_RESULTS_SERVICE_KEY` и `ACADEMY_RESULTS_WRITE_TOKEN`; браузер их не получает. Для Cloudflare также нужны `ACADEMY_STATE_URL` и `ACADEMY_STATE_TOKEN` (либо прежнее имя `ACADEMY_STATE_WRITE_TOKEN`).
 
 Не устанавливайте `ACADEMY_ALLOW_LOCAL_STATE` на Render: этот режим предназначен только для локальной разработки. Если постоянное хранилище недоступно, Academy вернёт ошибку сохранения, а не будет сообщать о сохранении, которое пропадёт после перезапуска.
 
