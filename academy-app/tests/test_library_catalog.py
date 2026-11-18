@@ -180,6 +180,13 @@ class CourseSourceContractTests(unittest.TestCase):
         self.assertNotIn("incompleteLibraryTile()", persist)
         self.assertIn("Черновик сохранён", persist)
 
+    def test_saved_blank_drafts_remain_visible_to_the_leader_after_reload(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("const draftCount=editor?", source)
+        self.assertIn("Черновики: ${draftCount}", source)
+        self.assertIn("Открыть черновики · ${draftCount}", source)
+
     def test_server_and_client_use_the_same_trainee_plan_version(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         client_version = re.search(r"TRAINEE_PLAN_VERSION='([^']+)'", source)
