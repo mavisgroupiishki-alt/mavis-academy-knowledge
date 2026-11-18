@@ -18,15 +18,16 @@
     .replace(/\n{3,}/g, '\n\n');
   const safeRichHtml = value => {
     const wrapper=document.createElement('div'); wrapper.innerHTML=String(value||'').replace(/&lt;br\s*\/?&gt;/gi,'<br>');
-    const allowed=new Set(['section','article','h2','h3','h4','p','ul','ol','li','strong','b','em','i','u','mark','span','font','br','hr','a','div','table','thead','tbody','tr','th','td','small','details','summary','figure','figcaption','img','iframe','dl','dt','dd']);
+    const allowed=new Set(['section','article','h2','h3','h4','p','ul','ol','li','strong','b','em','i','u','mark','span','font','br','hr','a','div','table','thead','tbody','tr','th','td','small','details','summary','figure','figcaption','img','iframe','video','dl','dt','dd']);
     [...wrapper.querySelectorAll('*')].forEach(node=>{
       if(!allowed.has(node.tagName.toLowerCase())){node.replaceWith(...node.childNodes);return;}
       const href=node.getAttribute('href')||'', src=node.getAttribute('src')||'', alt=node.getAttribute('alt')||'', color=node.getAttribute('color')||'', style=node.getAttribute('style')||'', className=node.getAttribute('class')||'';
       [...node.attributes].forEach(attribute=>node.removeAttribute(attribute.name));
-      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','trainee-sheet-source','trainee-video-source','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption','case-library','case-library-note','source-document-title','source-blocks','source-block','source-block-heading','source-block-label','source-block-body','source-block--overview','source-block--people','source-block--tools','source-block--workflow','source-block--important','source-block--reference'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
-      if(node.tagName==='A'){if(/^https:\/\//i.test(href))node.setAttribute('href',href);else node.replaceWith(...node.childNodes);}
+      const safeClasses=className.split(/\s+/).filter(name=>['trainee-lesson','trainee-lesson-lead','trainee-sheet-source','trainee-video-source','trainee-local-media','trainee-resource-link','trainee-decision-map','trainee-decision-map-lead','trainee-decision-map-steps','is-yes','is-check','is-route','bitrix-guide','bitrix-guide-head','bitrix-screen','bitrix-stages','bitrix-screen-body','bitrix-fields','bitrix-timeline','bitrix-note','bitrix-task','bitrix-guide-steps','price-guide','price-guide-head','price-steps','price-checklist','course-table-wrap','course-table','course-flow','course-flow-step','course-flow-arrow','course-figure','course-figure-caption','case-library','case-library-note','source-document-title','source-blocks','source-block','source-block-heading','source-block-label','source-block-body','source-block--overview','source-block--people','source-block--tools','source-block--workflow','source-block--important','source-block--reference'].includes(name));if(safeClasses.length)node.setAttribute('class',safeClasses.join(' '));
+      if(node.tagName==='A'){const normalized=href.replace(/^\//,'');if(/^https:\/\//i.test(href))node.setAttribute('href',href);else if(/^media\/[a-z0-9._-]+\.pdf$/i.test(normalized)){node.setAttribute('href',`/${normalized}`);node.setAttribute('target','_blank');node.setAttribute('rel','noopener noreferrer');}else node.replaceWith(...node.childNodes);}
       if(node.tagName==='IMG'){const normalized=src.replace(/^\//,'');if(/^media\/[a-z0-9._-]+\.(?:png|jpe?g|webp)$/i.test(normalized)){node.setAttribute('src',`/${normalized}`);node.setAttribute('alt',alt.slice(0,180));node.setAttribute('loading','lazy');}else node.remove();}
       if(node.tagName==='IFRAME'){if(/^https:\/\/docs\.google\.com\/videos\/d\/[a-zA-Z0-9_-]+\/(?:play|embed)(?:\?[^\s]*)?$/i.test(src)){node.setAttribute('src',src);node.setAttribute('title',alt||'Видео-обучение');node.setAttribute('allow','autoplay; fullscreen');node.setAttribute('allowfullscreen','');}else node.remove();}
+      if(node.tagName==='VIDEO'){const normalized=src.replace(/^\//,'');if(/^media\/[a-z0-9._-]+\.mp4$/i.test(normalized)){node.setAttribute('src',`/${normalized}`);node.setAttribute('controls','');node.setAttribute('preload','metadata');node.setAttribute('playsinline','');}else node.remove();}
       if(node.tagName==='FONT'&&/^#[0-9a-f]{3,8}$/i.test(color))node.setAttribute('color',color);
       if(node.tagName==='SPAN'){const clean=style.split(';').map(rule=>rule.trim()).filter(rule=>/^(color|background-color|font-weight|font-style|font-family)\s*:/i.test(rule)).join(';');if(clean)node.setAttribute('style',clean);}
     });
@@ -428,18 +429,21 @@
     const savedCourses=Array.isArray(courses)?courses:[];
     const templates=new Map(TRAINEE_SHEET_COURSES.map(course=>[course.id,course]));
     const savedById=new Map(savedCourses.map(course=>[course?.id,course]));
+    // Additive media tiles are injected into existing programmes without
+    // treating their absence as a reason to replace the leader's saved plan.
     const requiresSheetUpgrade=TRAINEE_SHEET_COURSES.some(template=>{
+      if(template.id==='tr-sheet-d2-bitrix24')return false;
       const saved=savedById.get(template.id);
       return !saved||saved.curriculumTemplate!==TRAINEE_CURRICULUM_TEMPLATE;
     })||savedCourses.some(course=>TRAINEE_LEGACY_COURSE_IDS.has(course?.id));
-    if(!requiresSheetUpgrade)return {courses:bindTraineeSources(savedCourses),days:Array.isArray(days)?days:TRAINEE_DAYS};
+    if(!requiresSheetUpgrade){const normalized={courses:bindTraineeSources(savedCourses),days:Array.isArray(days)?days:TRAINEE_DAYS};return window.MAVIS_TRAINEE_MEDIA?.apply(normalized.courses,normalized.days)||normalized;}
     // A new programme explicitly replaces the old trainee catalogue. Do not
     // retain a former card, summary, source mapping or assignment under a new
     // sheet-based plan. Subsequent leader edits remain intact because the
     // version matches on the next load.
     const migrated=TRAINEE_SHEET_COURSES.map(template=>({...template,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE}));
     const normalizedDays=TRAINEE_DAYS.map(day=>({...day,courseIds:[...(day.courseIds||[])],reviewCourseIds:[]}));
-    return {courses:bindTraineeSources(migrated),days:normalizedDays};
+    const normalized={courses:bindTraineeSources(migrated),days:normalizedDays};return window.MAVIS_TRAINEE_MEDIA?.apply(normalized.courses,normalized.days)||normalized;
   };
   let traineeCourses = bindTraineeSources([...TRAINEE_SHEET_COURSES]);
   let traineeDays = TRAINEE_DAYS;
@@ -1274,8 +1278,11 @@
   function traineePassportDocument(content){
     const root=document.createElement('div');root.innerHTML=safeRichHtml(content||'');
     const source=root.querySelector('.trainee-sheet-source')||root;
+    // The imported sheet stays structured as a passport.  Media and the
+    // visual decision map are purposeful standalone blocks after it.
+    const supplements=[...root.children].filter(node=>node!==source&&node.matches('.trainee-local-media,.trainee-decision-map')).map(node=>node.outerHTML).join('');
     const nodes=[...source.children].filter(node=>String(node.textContent||'').trim());
-    if(!nodes.length)return safeRichHtml(content||'');
+    if(!nodes.length)return `${safeRichHtml(content||'')}${supplements}`;
     const titleNode=nodes.find(node=>node.matches('h2'));
     const documentTitle=titleNode?`<h2 class="source-document-title">${titleNode.innerHTML}</h2>`:'';
     const sheets=[{title:'Материалы плитки',groups:[]}];let currentGroup=null;
@@ -1303,7 +1310,7 @@
       }
       ensureGroup().items.push({title:'Материал',kind:'overview',body:node.outerHTML,plain:true});
     });
-    return passportSheetsDocument(documentTitle,sheets)||safeRichHtml(content||'');
+    return `${passportSheetsDocument(documentTitle,sheets)||safeRichHtml(content||'')}${supplements}`;
   }
   function sourceStructuredDocument(data,path,allowedKinds){
     const full=readableDocument(data,path,isReferenceMaterial(path));

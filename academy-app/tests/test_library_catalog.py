@@ -72,6 +72,21 @@ class LibraryCatalogValidationTests(unittest.TestCase):
     def test_trainee_curriculum_limit_accepts_the_current_live_program_size(self):
         self.assertGreater(server.MAX_TRAINEE_CURRICULUM_BYTES, 831_889)
 
+    def test_allows_only_local_video_files_in_rich_trainee_content(self):
+        self.assertTrue(server.is_safe_rich_text('<video controls src="media/spk-10-days.mp4"></video>'))
+        self.assertFalse(server.is_safe_rich_text('<video src="https://example.com/video.mp4"></video>'))
+
+    def test_trainee_media_enrichment_keeps_the_new_assets_local(self):
+        enrichment = (server.ROOT / "trainee-media-enrichment.js").read_text(encoding="utf-8")
+        for filename in (
+            "spk-10-days.mp4",
+            "attestation-3-weeks.mp4",
+            "mavis-group-overview.mp4",
+            "bitrix-overdue-tasks.mp4",
+            "workflow-policy-overhaul.pdf",
+        ):
+            self.assertIn(filename, enrichment)
+
     def test_accepts_a_complete_imported_lesson_larger_than_twenty_thousand_characters(self):
         curriculum = server.validate_trainee_curriculum({
             "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,

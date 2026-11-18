@@ -1155,6 +1155,12 @@ def is_safe_rich_text(value):
         or any(not re.fullmatch(r"https://docs\.google\.com/videos/d/[A-Za-z0-9_-]+/(?:play|embed)(?:\?[^\s]*)?", source) for source in frame_sources)
     ):
         return False
+    video_sources = re.findall(r'''(?is)<\s*video\b[^>]*\bsrc\s*=\s*["']([^"']+)["']''', text)
+    if re.search(r"(?is)<\s*video\b", text) and (
+        not video_sources
+        or any(not re.fullmatch(r"/?media/[A-Za-z0-9._-]+\.mp4", source) for source in video_sources)
+    ):
+        return False
     forbidden = re.compile(
         r"(?is)<\s*/?\s*(script|style|object|embed|svg|math|link|meta|base)\b"
         r"|\bon[a-z]+\s*=|javascript\s*:|data\s*:\s*text/html|expression\s*\(|url\s*\("
