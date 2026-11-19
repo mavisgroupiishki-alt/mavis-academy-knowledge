@@ -980,6 +980,14 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("if not register_trainee(candidate_name):", profile)
         self.assertIn('"trainee_registration_unavailable"', profile)
 
+    def test_rich_formatting_updates_the_trainee_tile_before_save(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("function persistRichEditorMutation(editor)", source)
+        self.assertIn("window.academyLiveTraineeDocument(editor.innerHTML)", source)
+        self.assertIn("persistRichEditorMutation(active.editor)", source)
+        self.assertIn("course.importedSheet=false;", source)
+
     def test_technical_trainee_results_are_removed_with_the_registry_entries(self):
         kept, removed = server.remove_technical_trainee_rows([
             {"candidate_name": "Анна", "attempt_type": "final-exam"},

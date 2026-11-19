@@ -46,10 +46,20 @@
   const editableFromNode=node=>{const element=node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement;return element?.closest?.('[contenteditable="true"]')||null;};
   if(typeof document.addEventListener==='function')document.addEventListener('selectionchange',()=>{const selection=window.getSelection();if(!selection?.rangeCount)return;const editor=editableFromNode(selection.anchorNode);if(editor)richEditorRange=selection.getRangeAt(0).cloneRange();});
   function activeRichRange(){const selection=window.getSelection();let range=selection?.rangeCount?selection.getRangeAt(0):null;let editor=range&&editableFromNode(range.commonAncestorContainer);if(!editor&&richEditorRange){range=richEditorRange.cloneRange();editor=editableFromNode(range.commonAncestorContainer);if(editor&&selection){selection.removeAllRanges();selection.addRange(range);}}return editor&&range?{editor,range}:null;}
-  function applyRichStyle(style){const active=activeRichRange();if(!active||active.range.collapsed)return false;const {editor,range}=active,span=document.createElement('span');span.setAttribute('style',style);try{range.surroundContents(span);}catch(_){const fragment=range.extractContents();span.appendChild(fragment);range.insertNode(span);}const selection=window.getSelection();selection?.removeAllRanges();const next=document.createRange();next.selectNodeContents(span);selection?.addRange(next);richEditorRange=next.cloneRange();editor.focus();return true;}
+  function persistRichEditorMutation(editor){
+    // execCommand and Range mutations do not consistently emit an `input`
+    // event in Chromium. A trainee tile therefore used to show a formatted
+    // preview yet save the pre-format version. Persist the changed HTML at
+    // the mutation boundary instead of relying on that browser event.
+    if(!editor)return;
+    if(editor.id==='course-document'&&isTraineeWorkspace()&&state.traineeTileEditing){window.academyLiveTraineeDocument(editor.innerHTML);return;}
+    if(editor.matches('.trainee-live-editable')){window.academyLiveTraineeField('content',editor.innerHTML);return;}
+    if(editor.matches('[data-library-field="content"]'))window.academyQueueLibrarySave?.();
+  }
+  function applyRichStyle(style){const active=activeRichRange();if(!active||active.range.collapsed)return false;const {editor,range}=active,span=document.createElement('span');span.setAttribute('style',style);try{range.surroundContents(span);}catch(_){const fragment=range.extractContents();span.appendChild(fragment);range.insertNode(span);}const selection=window.getSelection();selection?.removeAllRanges();const next=document.createRange();next.selectNodeContents(span);selection?.addRange(next);richEditorRange=next.cloneRange();editor.focus();persistRichEditorMutation(editor);return true;}
   const toolbarButton=(label,action,title='')=>`<button type="button" ${title?`title="${title}"`:''} onmousedown="event.preventDefault();${action}">${label}</button>`;
   const richEditorToolbar=(label='Форматирование')=>`<div class="rich-editor-toolbar rich-editor-toolbar--full" aria-label="${label}"><b>${label}</b>${toolbarButton('<b>Ж</b>',"academyFormatText('bold')",'Жирный')}${toolbarButton('<i>К</i>',"academyFormatText('italic')",'Курсив')}${toolbarButton('<u>Ч</u>',"academyFormatText('underline')",'Подчёркнутый')}${toolbarButton('• Список',"academyFormatText('insertUnorderedList')",'Маркированный список')}${toolbarButton('1. Список',"academyFormatText('insertOrderedList')",'Нумерованный список')}${toolbarButton('Заголовок',"academyFormatText('formatBlock','h3')",'Заголовок')}${toolbarButton('Меньше','academyChangeRichFontSize(-1)')}${toolbarButton('Больше','academyChangeRichFontSize(1)')}<label class="rich-editor-font">Шрифт<select aria-label="Шрифт" onchange="academySetRichFont(this.value)"><option value="Arial">Arial</option><option value="Avenir Next">Avenir Next</option><option value="Georgia">Georgia</option><option value="Times New Roman">Times New Roman</option><option value="Verdana">Verdana</option></select></label>${toolbarButton('Жёлтый',"academyApplyRichHighlight('#fff1b8')",'Пастельно-жёлтое выделение')}${toolbarButton('Мята',"academyApplyRichHighlight('#ccefe0')",'Пастельно-мятное выделение')}${toolbarButton('Розовый',"academyApplyRichHighlight('#ffdce5')",'Пастельно-розовое выделение')}<input aria-label="Цвет текста" type="color" value="#087f76" oninput="academyFormatText('foreColor',this.value)">${toolbarButton('Копировать формат','academyCopyRichFormat()')}${toolbarButton('Вставить формат','academyPasteRichFormat()')}${toolbarButton('Очистить',"academyFormatText('removeFormat')",'Очистить формат')}</div>`;
-  window.academyFormatText=(command,value)=>{const active=activeRichRange();if(!active)return;active.editor.focus();document.execCommand(command,false,value||null);const selection=window.getSelection();if(selection?.rangeCount)richEditorRange=selection.getRangeAt(0).cloneRange();};
+  window.academyFormatText=(command,value)=>{const active=activeRichRange();if(!active)return;active.editor.focus();document.execCommand(command,false,value||null);const selection=window.getSelection();if(selection?.rangeCount)richEditorRange=selection.getRangeAt(0).cloneRange();persistRichEditorMutation(active.editor);};
   window.academySetRichFont=font=>applyRichStyle(`font-family:${String(font||'').replace(/["']/g,'')}`);
   window.academyChangeRichFontSize=delta=>{const active=activeRichRange();if(!active)return;const anchor=active.range.startContainer.nodeType===Node.ELEMENT_NODE?active.range.startContainer:active.range.startContainer.parentElement;const size=Math.max(10,Math.min(28,Math.round(parseFloat(getComputedStyle(anchor).fontSize||'16')+(Number(delta)||0)*2)));applyRichStyle(`font-size:${size}px`);};
   window.academyApplyRichHighlight=color=>applyRichStyle(`background-color:${color}`);
@@ -1992,7 +2002,7 @@
     if(!canEditBase()||!isTraineeWorkspace())return;
     const course=current();if(!course)return;
     course[field]=field==='content'?safeRichHtml(value):String(value||'').trim();
-    if(field==='content')course._contentEdited=true;
+    if(field==='content'){course._contentEdited=true;course.importedSheet=false;}
   };
   window.academySetTraineeTileDay=value=>{
     if(!canEditBase()||!isTraineeWorkspace())return;
@@ -2029,6 +2039,7 @@
     // That is intentional: the saved view is precisely what the trainee saw.
     course.content=safeRichHtml(html);
     course._contentEdited=true;
+    course.importedSheet=false;
     course.sources=[];
     course.isCustomContent=true;
   };
