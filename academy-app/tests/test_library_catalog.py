@@ -973,6 +973,13 @@ class PersistentStateTransportTests(unittest.TestCase):
         ):
             self.assertFalse(server.register_trainee("Анна"))
 
+    def test_trainee_profile_recovers_an_old_session_in_the_registry(self):
+        backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
+        profile = backend.split("    def trainee_profile(self):", 1)[1].split("    def save_trainee_progress", 1)[0]
+
+        self.assertIn("if not register_trainee(candidate_name):", profile)
+        self.assertIn('"trainee_registration_unavailable"', profile)
+
     def test_technical_trainee_results_are_removed_with_the_registry_entries(self):
         kept, removed = server.remove_technical_trainee_rows([
             {"candidate_name": "Анна", "attempt_type": "final-exam"},

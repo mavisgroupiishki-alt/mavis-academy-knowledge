@@ -1786,6 +1786,11 @@ class Handler(SimpleHTTPRequestHandler):
         if not access or access["role"] != "trainee":
             return self.respond_json({"error": "forbidden"}, 403)
         candidate_name = access["name"]
+        # Older trainee sessions were created before the durable registry was
+        # introduced. Reconcile them on the first profile load as well as at
+        # sign-in, so a real employee does not disappear from the leader view.
+        if not register_trainee(candidate_name):
+            return self.respond_json({"error": "trainee_registration_unavailable"}, 503)
         progress = {}
         try:
             progress_state = read_auxiliary_state("trainee_progress", TRAINEE_PROGRESS_STORE, {"items": {}})
