@@ -710,6 +710,16 @@ console.log(JSON.stringify({missing,coverage}));
             section = source.split(f"'{course_id}':[", 1)[1].split("    ],", 1)[0]
             self.assertEqual(section.count("{q:"), 8, course_id)
 
+    def test_spk_quiz_uses_multi_condition_cases_with_shuffled_correct_options(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        spk = source.split("'tr-sheet-d1-03':[", 1)[1].split("    ],", 1)[0]
+
+        self.assertIn("объекте 3 класса", spk)
+        self.assertIn("по совместительству", spk)
+        self.assertIn("13 месяцев", spk)
+        self.assertIn("options:['", spk)
+        self.assertEqual(re.findall(r"answer:(\d)", spk), ["2", "0", "3", "1", "2", "0", "3", "1"])
+
     def test_trainee_has_a_private_profile_and_server_side_progress_route(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
