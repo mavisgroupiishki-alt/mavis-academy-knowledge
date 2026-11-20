@@ -746,6 +746,40 @@ def write_cloudflare_shared_state(name, value):
     return write_cloudflare_shared_states({name: value})
 
 
+def read_cloudflare_state_row(name):
+    """Read one current Worker row, decoding its compact representation."""
+    result = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+    value = decode_persistent_value(result.get("value")) if isinstance(result, dict) else None
+    # A short-lived deployment stored the v2 envelope at the catalogue key.
+    # Treat it as a legacy container rather than exposing it as a catalogue.
+    if (name == "library_catalog" and isinstance(value, dict)
+            and value.get(CLOUDFLARE_COMPATIBILITY_STATE_FIELD) == CLOUDFLARE_COMPATIBILITY_STATE_MARKER):
+        states = value.get("states", {})
+        return states.get(name) if isinstance(states, dict) else None
+    return value
+
+
+def write_cloudflare_state_row(name, value):
+    """Write one state stream and prove it survived a separate read.
+
+    State used to be put into one large shared Worker row.  Editing any tile
+    therefore sent the complete catalogue, all document overrides and the
+    trainee programme together.  The row eventually exceeded Worker/D1
+    request limits, even for a small single-tile edit.  The Worker supports
+    one allowlisted row per stream, so keep the durable write scoped to the
+    data that actually changed.
+    """
+    encoded_value = encode_persistent_value(value)
+    saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], encoded_value)
+    if not isinstance(saved, dict) or saved.get("value") != encoded_value:
+        raise OSError("persistent_state_write_unconfirmed")
+    confirmed = persistent_state_request("GET", PERSISTENT_STATE_KEYS[name])
+    if not isinstance(confirmed, dict) or confirmed.get("value") != encoded_value:
+        raise OSError("persistent_state_readback_unconfirmed")
+    PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+    return True
+
+
 def read_persistent_state(name):
     cached = PERSISTENT_STATE_CACHE.get(name)
     if cached and time.time() - cached["at"] < 3:
@@ -755,55 +789,38 @@ def read_persistent_state(name):
         return None
 
     if backend == "cloudflare":
-        # The v3 envelope is the only write path. Check it first on every
-        # fresh process, then fall back to legacy rows only when it has no
-        # value for this stream yet.
+        # Prefer the small, independent current row.  The shared envelope is
+        # read-only compatibility for data saved by older Academy releases.
         try:
-            shared_value = read_cloudflare_shared_state(name)
-        except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
-            shared_value = None
-        if shared_value is not None:
-            enable_cloudflare_shared_state()
-            PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": shared_value}
-            return shared_value
-
-    key = PERSISTENT_STATE_KEYS[name]
-    try:
-        result = persistent_state_request("GET", key)
-    except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        if backend == "cloudflare" and persistent_error_detail(exc) == "worker_invalid_key":
-            enable_cloudflare_shared_state()
-            value = read_cloudflare_shared_state(name)
+            value = read_cloudflare_state_row(name)
+        except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Academy ignored malformed state row: {persistent_error_detail(exc)}", flush=True)
+            value = None
+        if value is not None:
             PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
             return value
-        result = None
-    try:
-        value = decode_persistent_value(result.get("value")) if isinstance(result, dict) else None
-    except ValueError as exc:
-        # A malformed legacy row is not evidence that the user's new tile is
-        # invalid. Preserve that row untouched and use the bundled/default
-        # data until the first verified v3 save creates a clean envelope.
-        if backend != "cloudflare":
-            raise
-        print(f"Academy ignored malformed legacy state: {persistent_error_detail(exc)}", flush=True)
-        value = None
-    if backend == "cloudflare" and name == "library_catalog" and isinstance(value, dict) and value.get(CLOUDFLARE_COMPATIBILITY_STATE_FIELD) == CLOUDFLARE_COMPATIBILITY_STATE_MARKER:
-        enable_cloudflare_shared_state()
-        states = value.get("states", {})
-        value = states.get(name) if isinstance(states, dict) else None
-    # Preserve records written by the former shared-envelope implementation
-    # until they are migrated by the next curriculum save.
-    if backend == "cloudflare" and value is None and not cloudflare_uses_shared_state():
         try:
-            legacy_shared_value = migrate_legacy_shared_state_value(name)
+            legacy_shared_value = read_cloudflare_shared_state(name)
         except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
             legacy_shared_value = None
         if legacy_shared_value is not None:
+            enable_cloudflare_shared_state()
             value = legacy_shared_value
-    if backend == "cloudflare" and value is None and name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
-        envelope = cloudflare_curriculum_auxiliary_envelope()
-        auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
-        value = auxiliary.get(name) if isinstance(auxiliary, dict) else None
+            PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+            return value
+        if name in CLOUDFLARE_AUXILIARY_STATE_NAMES:
+            try:
+                envelope = cloudflare_curriculum_auxiliary_envelope()
+                auxiliary = envelope.get(CLOUDFLARE_AUXILIARY_ENVELOPE_KEY, {})
+                value = auxiliary.get(name) if isinstance(auxiliary, dict) else None
+            except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError):
+                value = None
+        PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
+        return value
+
+    key = PERSISTENT_STATE_KEYS[name]
+    result = persistent_state_request("GET", key)
+    value = decode_persistent_value(result.get("value")) if isinstance(result, dict) else None
     PERSISTENT_STATE_CACHE[name] = {"at": time.time(), "value": value}
     return value
 
@@ -812,14 +829,17 @@ def write_persistent_state(name, value):
     backend = persistent_state_config()[0]
     if backend:
         if backend == "cloudflare":
-            # Always use the versioned envelope. It makes a complete edit one
-            # D1 record and avoids legacy per-key data from blocking a save.
-            enable_cloudflare_shared_state()
-            return write_cloudflare_shared_state(name, value)
+            try:
+                return write_cloudflare_state_row(name, value)
+            except HTTPError as exc:
+                # Keep the legacy compatibility envelope only for old Worker
+                # deployments that truly do not recognise the independent
+                # key. Current deployments never combine unrelated state.
+                if persistent_error_detail(exc) == "worker_invalid_key":
+                    enable_cloudflare_shared_state()
+                    return write_cloudflare_shared_state(name, value)
+                raise
         try:
-            if backend == "cloudflare" and name == "curriculum":
-                previous = cloudflare_curriculum_auxiliary_envelope()
-                migrate_legacy_cloudflare_auxiliary_state(previous)
             encoded_value = encode_persistent_value(value)
             saved = persistent_state_request("POST", PERSISTENT_STATE_KEYS[name], encoded_value)
             expected = encoded_value
@@ -858,8 +878,15 @@ def write_persistent_states(updates):
         raise ValueError("invalid_persistent_state_updates")
     backend = persistent_state_config()[0]
     if backend == "cloudflare":
-        enable_cloudflare_shared_state()
-        return write_cloudflare_shared_states(updates)
+        try:
+            for name, value in updates.items():
+                write_cloudflare_state_row(name, value)
+            return True
+        except HTTPError as exc:
+            if persistent_error_detail(exc) == "worker_invalid_key":
+                enable_cloudflare_shared_state()
+                return write_cloudflare_shared_states(updates)
+            raise
     if not backend:
         if not allow_local_state():
             raise ValueError("state_not_configured")

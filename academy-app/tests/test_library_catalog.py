@@ -1369,7 +1369,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         }, clear=False), patch.object(server, "urlopen", fake_urlopen):
             self.assertTrue(server.write_persistent_state("curriculum", value))
 
-        self.assertEqual(saved["value"]["states"]["curriculum"], value)
+        self.assertEqual(saved["value"], value)
 
     def test_cloudflare_malformed_response_is_reported(self):
         class Response:
@@ -1390,7 +1390,7 @@ class PersistentStateTransportTests(unittest.TestCase):
             with self.assertRaises(json.JSONDecodeError):
                 server.persistent_state_request("GET", "academy:material-metadata")
 
-    def test_cloudflare_saves_each_editor_state_in_the_versioned_envelope(self):
+    def test_cloudflare_saves_each_editor_state_in_its_own_row(self):
         stored = {server.PERSISTENT_STATE_KEYS["curriculum"]: {"courses": [], "days": [], "planVersion": "test"}}
 
         class Response:
@@ -1428,13 +1428,14 @@ class PersistentStateTransportTests(unittest.TestCase):
                 self.assertEqual(server.read_persistent_state(name), value)
             self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]]["courses"], [])
             for name, value in values.items():
-                self.assertEqual(stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]["states"][name], value)
+                self.assertEqual(stored[server.PERSISTENT_STATE_KEYS[name]], value)
+            self.assertNotIn(server.CLOUDFLARE_COMPATIBILITY_STATE_KEY, stored)
             self.assertNotIn(
                 server.CLOUDFLARE_AUXILIARY_ENVELOPE_KEY,
                 stored[server.PERSISTENT_STATE_KEYS["curriculum"]],
             )
 
-    def test_cloudflare_preserves_legacy_rows_before_writing_the_versioned_envelope(self):
+    def test_cloudflare_overwrites_only_the_changed_current_row(self):
         legacy_catalog = {"hidden": [], "overrides": {}, "custom": [{"id": "saved-tile"}], "archived": []}
         stored = {
             server.PERSISTENT_STATE_KEYS["curriculum"]: {
@@ -1472,8 +1473,8 @@ class PersistentStateTransportTests(unittest.TestCase):
             self.assertTrue(server.write_persistent_state("curriculum", replacement))
 
         self.assertNotIn(server.PERSISTENT_STATE_KEYS["library_catalog"], stored)
-        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]]["courses"], [{"id": "old"}])
-        self.assertEqual(stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]["states"]["curriculum"], replacement)
+        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]]["courses"], [{"id": "new"}])
+        self.assertNotIn(server.CLOUDFLARE_COMPATIBILITY_STATE_KEY, stored)
 
     def test_cloudflare_reads_a_legacy_editor_value_until_it_is_saved_to_curriculum(self):
         with patch.dict(server.os.environ, {
@@ -1487,10 +1488,7 @@ class PersistentStateTransportTests(unittest.TestCase):
         ) as request:
             server.PERSISTENT_STATE_CACHE.clear()
             self.assertEqual(server.read_persistent_state("document_overrides"), {"legacy": "editor content"})
-            self.assertEqual(request.call_args_list, [
-                call("GET", server.CLOUDFLARE_COMPATIBILITY_STATE_KEY),
-                call("GET", server.PERSISTENT_STATE_KEYS["document_overrides"]),
-            ])
+            self.assertEqual(request.call_args_list, [call("GET", server.PERSISTENT_STATE_KEYS["document_overrides"])])
 
     def test_cloudflare_ignores_a_malformed_legacy_row_and_saves_to_v3(self):
         stored = {
@@ -1519,7 +1517,7 @@ class PersistentStateTransportTests(unittest.TestCase):
             stored[server.PERSISTENT_STATE_KEYS["library_catalog"]]["data"],
             "not-valid-compressed-state",
         )
-        self.assertEqual(stored[server.CLOUDFLARE_COMPATIBILITY_STATE_KEY]["states"]["curriculum"], curriculum)
+        self.assertEqual(stored[server.PERSISTENT_STATE_KEYS["curriculum"]], curriculum)
 
     def test_cloudflare_ignores_unavailable_legacy_editor_key(self):
         with patch.dict(server.os.environ, {
@@ -1569,8 +1567,7 @@ class PersistentStateTransportTests(unittest.TestCase):
 
         def request(method, key, value=None):
             self.assertEqual(method, "GET")
-            self.assertEqual(key, server.CLOUDFLARE_COMPATIBILITY_STATE_KEY)
-            return {"value": stored[key]}
+            return {"value": stored.get(key)}
 
         with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://example", None, "token")), patch.object(
             server, "persistent_state_request", side_effect=request
