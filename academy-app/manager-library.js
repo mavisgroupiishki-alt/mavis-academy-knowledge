@@ -424,6 +424,16 @@
       {q:'Как правильно объяснить ценность через деньги и риски?',options:['Назвать документ без связи с задачей','Связать решение с допуском, тендером, риском и конкретным результатом клиента','Пообещать отсутствие любых рисков'],answer:1},
       {q:'Что нельзя делать при продаже сложного продукта?',options:['Проверить вводные с экспертом','Подменить диагностику готовым обещанием','Зафиксировать дату следующего контакта'],answer:1}
     ],
+    'tr-sheet-d2-iso-9001':[
+      {q:'Клиент говорит: «В тендерах участвуем редко, но вероятность примерно 30%; в госзакупках пока не участвуем». Какой основной вариант предлагает шпаргалка?',options:['Только разработку документов по ОТ','ISO 9001 и ISO 45001 вместе','Только ISO 45001'],answer:1},
+      {q:'У компании нет тендеров, она не планирует их в ближайший год. Какой вариант соответствует схеме принятия решения?',options:['Оба сертификата без диагностики','Только ISO 9001','Только разработка документов по охране труда'],answer:2},
+      {q:'Клиент участвует в госзакупках и ограничен в бюджете. Какую деталь нельзя пропустить при подборе решения?',options:['Проверить и учесть ISO 45001 по охране труда','Предложить только ISO 9001, потому что он дешевле','Не задавать вопросов о цели закупки'],answer:0},
+      {q:'Какой вопрос из скрипта помогает не спутать тендеры с госзакупками?',options:['«Вы участвуете в госзакупках?»','«Какую скидку дали конкуренты?»','«Сколько лет существует компания?»'],answer:0},
+      {q:'Как менеджер корректно озвучивает вариант при ограниченном бюджете и отсутствии госзакупок?',options:['«Давайте сделаем ISO 9001 и разработку документов по ОТ: пошлина одна, а инженер подготовит документы»','«Возьмём только ISO 45001 и не будем проверять цель»','«Откажемся от всех документов, пока не появится тендер»'],answer:0},
+      {q:'Какой набор должен быть зафиксирован в КП по чек-листу?',options:['Только итоговая сумма без пояснений','Основная стоимость и варианты ниже','Только список стандартов без следующего шага'],answer:1},
+      {q:'Что из перечисленного относится к проверке готовности до обещания маршрута из материала Word?',options:['Поверенные СИ, если они используются для контроля качества','Только название компании в CRM','Личный номер директора'],answer:0},
+      {q:'Какая финальная фиксация после звонка соответствует плитке?',options:['«Клиент подумает»','Участие в тендерах и госзакупках, выбранный вариант, недостающие документы и дата следующего контакта','Сразу обещанный сертификат без проверки вводных'],answer:1}
+    ],
     'tr-sheet-d3-01':[
       {q:'С чего начинается получение разрешительного документа?',options:['С оплаты без данных','С определения фактических работ и диагностики исходных данных','С выдачи готового КП'],answer:1},
       {q:'Что передаётся эксперту после диагностики?',options:['Только название клиента','Задача клиента, виды работ, документы, пробелы и согласованный следующий шаг','Только ссылка на сайт компании'],answer:1}
@@ -486,14 +496,23 @@
     const savedCourses=Array.isArray(courses)?courses:[];
     const templates=new Map(TRAINEE_SHEET_COURSES.map(course=>[course.id,course]));
     const savedById=new Map(savedCourses.map(course=>[course?.id,course]));
-    // Additive media tiles are injected into existing programmes without
+    // Newly released tiles are injected into existing programmes without
     // treating their absence as a reason to replace the leader's saved plan.
+    const ADDITIVE_TRAINEE_TILE_IDS=new Set(['tr-sheet-d2-bitrix24','tr-sheet-d2-iso-9001']);
     const requiresSheetUpgrade=TRAINEE_SHEET_COURSES.some(template=>{
-      if(template.id==='tr-sheet-d2-bitrix24')return false;
+      if(ADDITIVE_TRAINEE_TILE_IDS.has(template.id))return false;
       const saved=savedById.get(template.id);
       return !saved||saved.curriculumTemplate!==TRAINEE_CURRICULUM_TEMPLATE;
     })||savedCourses.some(course=>TRAINEE_LEGACY_COURSE_IDS.has(course?.id));
-    if(!requiresSheetUpgrade){const normalized={courses:bindTraineeSources(savedCourses),days:Array.isArray(days)?days:TRAINEE_DAYS};return window.MAVIS_TRAINEE_MEDIA?.apply(normalized.courses,normalized.days)||normalized;}
+    if(!requiresSheetUpgrade){
+      const additive=TRAINEE_SHEET_COURSES.filter(template=>ADDITIVE_TRAINEE_TILE_IDS.has(template.id)&&!savedById.has(template.id));
+      const normalizedDays=(Array.isArray(days)?days:TRAINEE_DAYS).map((day,dayIndex)=>{
+        const courseIds=[...(day?.courseIds||[])];
+        for(const template of additive)if((TRAINEE_DAYS[dayIndex]?.courseIds||[]).includes(template.id)&&!courseIds.includes(template.id))courseIds.push(template.id);
+        return {...day,courseIds};
+      });
+      const normalized={courses:bindTraineeSources([...savedCourses,...additive.map(template=>({...template,curriculumTemplate:TRAINEE_CURRICULUM_TEMPLATE}))]),days:normalizedDays};return window.MAVIS_TRAINEE_MEDIA?.apply(normalized.courses,normalized.days)||normalized;
+    }
     // A new programme explicitly replaces the old trainee catalogue. Do not
     // retain a former card, summary, source mapping or assignment under a new
     // sheet-based plan. Subsequent leader edits remain intact because the

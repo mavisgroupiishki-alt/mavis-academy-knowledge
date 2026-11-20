@@ -676,6 +676,10 @@ console.log(JSON.stringify({missing,coverage}));
         self.assertIn("if(course.importedSheet)return {...course,sources:[],attachments:[],sourceCourse:'',fallbackContent:''};", source)
         self.assertIn("Проверьте понимание темы", source)
         self.assertIn('"title":"Допродажи"', program)
+        self.assertIn("generated/trainee-iso9001.js", (server.ROOT / "index.html").read_text(encoding="utf-8"))
+        iso_script = (server.ROOT / "generated" / "trainee-iso9001.js").read_text(encoding="utf-8")
+        self.assertIn("tr-sheet-d2-iso-9001", iso_script)
+        self.assertIn("Шпаргалка: какой вариант предлагать", iso_script)
         self.assertIn('"title":"Лицензия МВД"', program)
         self.assertNotIn("tr-d3-script-practice", program)
         final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
@@ -709,6 +713,11 @@ console.log(JSON.stringify({missing,coverage}));
         for course_id in ("tr-sheet-d1-03", "tr-sheet-d1-04", "tr-sheet-d1-05", "tr-sheet-d1-06"):
             section = source.split(f"'{course_id}':[", 1)[1].split("    ],", 1)[0]
             self.assertEqual(section.count("{q:"), 8, course_id)
+
+    def test_iso_9001_script_tile_has_eight_case_questions(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        section = source.split("'tr-sheet-d2-iso-9001':[", 1)[1].split("    ],", 1)[0]
+        self.assertEqual(section.count("{q:"), 8)
 
     def test_spk_quiz_uses_multi_condition_cases_with_shuffled_correct_options(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
