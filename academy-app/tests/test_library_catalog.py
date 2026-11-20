@@ -695,6 +695,21 @@ console.log(JSON.stringify({missing,coverage}));
         self.assertNotIn("exam-written", final_exam)
         self.assertIn("Выберите ответ на все", source)
 
+    def test_test_choice_is_explicitly_visible_before_checking(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        styles = (server.ROOT / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('aria-pressed="${isSelected}"', source)
+        self.assertIn("<em>Выбрано</em>", source)
+        self.assertIn(".practice-options button.selected", styles)
+
+    def test_core_day_one_product_quizzes_have_eight_source_based_questions(self):
+        source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        for course_id in ("tr-sheet-d1-03", "tr-sheet-d1-04", "tr-sheet-d1-05", "tr-sheet-d1-06"):
+            section = source.split(f"'{course_id}':[", 1)[1].split("    ],", 1)[0]
+            self.assertEqual(section.count("{q:"), 8, course_id)
+
     def test_trainee_has_a_private_profile_and_server_side_progress_route(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
         backend = (server.ROOT / "server.py").read_text(encoding="utf-8")
