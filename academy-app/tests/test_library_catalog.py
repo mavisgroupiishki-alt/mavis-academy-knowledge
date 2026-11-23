@@ -1172,6 +1172,24 @@ class PersistentStateTransportTests(unittest.TestCase):
         self.assertIn("async scheduled", worker)
         self.assertIn('https://mavis-academy.onrender.com/healthz', worker)
 
+    def test_storage_status_reports_a_legacy_worker_as_compatible(self):
+        error = server.HTTPError("https://state", 400, "invalid_key", None, None)
+        error.academy_storage_detail = "worker_invalid_key"
+        with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://state", None, "token")), patch.object(
+            server, "persistent_state_request", side_effect=[error, {"value": {}}]
+        ):
+            status = server.persistent_storage_status()
+
+        self.assertEqual(status, {"status": "ready", "backend": "cloudflare", "mode": "compatibility_row"})
+
+    def test_storage_status_never_exposes_the_store_url_or_secret(self):
+        with patch.object(server, "persistent_state_config", return_value=("cloudflare", "https://private.example", None, "secret-token")), patch.object(
+            server, "persistent_state_request", side_effect=server.URLError("offline")
+        ):
+            status = server.persistent_storage_status()
+
+        self.assertEqual(status, {"status": "unavailable", "backend": "cloudflare", "detail": "network"})
+
     def test_cloudflare_request_keeps_the_worker_secret_on_the_server(self):
         captured = {}
 

@@ -556,6 +556,32 @@ def persistent_error_detail(exc):
     return type(exc).__name__.lower()
 
 
+def persistent_storage_status():
+    """Probe the configured editor store without reading or modifying Academy data.
+
+    The health check uses only a storage read and returns a fixed diagnostic;
+    it never includes a URL, secret or saved Academy content.
+    """
+    backend = persistent_state_config()[0]
+    if not backend:
+        return {"status": "not_configured"}
+    try:
+        if backend == "cloudflare":
+            try:
+                persistent_state_request("GET", PERSISTENT_STATE_KEYS["curriculum"])
+                return {"status": "ready", "backend": "cloudflare", "mode": "separate_rows"}
+            except HTTPError as exc:
+                if persistent_error_detail(exc) != "worker_invalid_key":
+                    raise
+                # Older Worker versions have only the compatibility row.
+                persistent_state_request("GET", CLOUDFLARE_COMPATIBILITY_STATE_KEY)
+                return {"status": "ready", "backend": "cloudflare", "mode": "compatibility_row"}
+        persistent_state_request("GET", PERSISTENT_STATE_KEYS["curriculum"])
+        return {"status": "ready", "backend": backend}
+    except (OSError, URLError, HTTPError, TimeoutError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return {"status": "unavailable", "backend": backend, "detail": persistent_error_detail(exc)}
+
+
 def cloudflare_uses_shared_state():
     return CLOUDFLARE_SHARED_STATE_ENABLED
 
@@ -2565,7 +2591,11 @@ class Handler(SimpleHTTPRequestHandler):
             except (URLError, HTTPError, TimeoutError, ValueError) as exc:
                 return self.respond_json({"connected": False, "message": "Источник временно недоступен"}, 503)
         if self.path == "/healthz":
-            return self.respond_json({"ok": True})
+            storage = persistent_storage_status()
+            return self.respond_json(
+                {"ok": storage["status"] == "ready", "storage": storage},
+                200 if storage["status"] == "ready" else 503,
+            )
         if self.path in ("/", "/index.html"):
             self.path = "/index.html"
         return super().do_GET()

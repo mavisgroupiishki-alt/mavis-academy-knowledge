@@ -155,7 +155,7 @@
         <h4>Выявление потребности</h4>
         <p class="trainee-upsell-quote">«Подскажите, пожалуйста, сейчас есть все необходимые аттестованные специалисты по направлениям?»</p>
         <h4>Основное предложение</h4>
-        <p>Стоимость сопровождения — <b>350 руб.</b> В услугу входят:</p>
+        <p>Стоимость сопровождения — <b>440 руб.</b> В услугу входят:</p>
         <ul>
           <li>подготовка и подача формы;</li>
           <li>консультация по стратегии устранения замечаний;</li>
@@ -208,6 +208,8 @@
     if(upsell&&String(upsell.content||'').includes('Скрипт по тендерным сертификатам - СТРОИТЕЛЬСТВО'))upsell.content=upsellTileContent;
     if(!byId(bitrixTile.id)){courses.push({...bitrixTile});const dayTwo=days[1];if(dayTwo){dayTwo.courseIds=Array.isArray(dayTwo.courseIds)?dayTwo.courseIds:[];dayTwo.courseIds.push(bitrixTile.id);}}
     if(!byId(attestationConfirmationTile.id)){courses.push({...attestationConfirmationTile});const dayTwo=days[1];if(dayTwo){dayTwo.courseIds=Array.isArray(dayTwo.courseIds)?dayTwo.courseIds:[];dayTwo.courseIds.push(attestationConfirmationTile.id);}}
+    const confirmation=byId(attestationConfirmationTile.id);
+    if(confirmation&&String(confirmation.content||'').includes('Стоимость сопровождения — <b>350 руб.</b>'))confirmation.content=String(confirmation.content).replace('Стоимость сопровождения — <b>350 руб.</b>','Стоимость сопровождения — <b>440 руб.</b>');
     appendOnce(byId(bitrixTile.id),'Регламент работы менеджеров в Bitrix24',bitrixRegulation);
     return {courses,days};
   }
