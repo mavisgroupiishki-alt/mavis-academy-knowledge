@@ -685,6 +685,19 @@ console.log(JSON.stringify({missing,coverage}));
         final_exam = source.split("const FINAL_EXAM_BANK = [", 1)[1].split("];", 1)[0]
         self.assertEqual(final_exam.count("{q:'"), 20)
 
+    def test_day_two_upsell_sheet_is_normalized_into_a_readable_script_and_decision_map(self):
+        enrichment = (server.ROOT / "trainee-media-enrichment.js").read_text(encoding="utf-8")
+        renderer = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+        styles = (server.ROOT / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("const upsellTileContent=", enrichment)
+        self.assertIn("Что предложить строительной компании", enrichment)
+        self.assertIn("Тендеры + госзаказчики", enrichment)
+        self.assertIn("ISO 9001 + ISO 45001", enrichment)
+        self.assertIn("if(upsell&&String(upsell.content||'').includes('Скрипт по тендерным сертификатам - СТРОИТЕЛЬСТВО'))", enrichment)
+        self.assertIn("'trainee-upsell-map'", renderer)
+        self.assertIn(".trainee-upsell-map", styles)
+
     def test_trainee_checks_use_real_multiple_choice_cases_not_study_yes_no_prompts(self):
         source = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
 
