@@ -89,6 +89,105 @@
     </article>
   </section>`;
   const bitrixTile={id:'tr-sheet-d2-bitrix24',icon:'▣',color:'aqua',title:'Работа с Bitrix24',eyebrow:'День 2 «Базовые скрипты и чек-листы»',lead:'',sources:[],attachments:[],content:`${localVideo('Видео: как правильно закрывать просроченные дела в CRM','bitrix-overdue-tasks.mp4')}<p><a class="trainee-resource-link" href="media/workflow-policy-overhaul.pdf" target="_blank" rel="noopener noreferrer">Открыть презентацию</a></p>${bitrixRegulation}`,assignment:null,importedSheet:false,curriculumTemplate:'trainee-sheets-2026-11-13.1',check:{q:'Видео и презентация по Bitrix24 изучены?',options:['Да, изучены','Нет, нужно вернуться к материалам'],answer:0,order:[]}};
+  const attestationConfirmationTileContent=`<section class="trainee-sheet-source trainee-attestation-confirmation">
+    <h2>Подтверждение аттестата</h2>
+    <p>Ежегодная процедура подтверждения: сроки, подача формы, работа с замечаниями и сценарий разговора с клиентом.</p>
+
+    <article class="source-block source-block--overview">
+      <p class="source-block-label">СРОК И ПОДАЧА</p>
+      <h3 class="source-block-heading">Что важно сделать в декабре</h3>
+      <div class="source-block-body">
+        <ul>
+          <li>Подтверждение проходит ежегодно с <b>1 по 31 декабря</b>.</li>
+          <li>Форму заполняют на сайте: данные компании и перечень аттестованных специалистов.</li>
+          <li>Если аттестат выдан до 1 ноября текущего года, подтверждение обязательно. Если после 1 ноября — подтверждение не требуется.</li>
+          <li>Форму можно подать в любой день декабря, включая 30–31 декабря.</li>
+        </ul>
+      </div>
+    </article>
+
+    <article class="source-block source-block--important">
+      <p class="source-block-label">ЕСЛИ НЕ ХВАТАЕТ СПЕЦИАЛИСТОВ</p>
+      <h3 class="source-block-heading">Форму всё равно нужно подать</h3>
+      <div class="source-block-body">
+        <ul>
+          <li>Даже если нет аттестованного специалиста или их недостаточно, форму подтверждения нужно отправить.</li>
+          <li>Если форму не подать, в январе аттестат аннулируют автоматически.</li>
+          <li>После аннулирования нельзя работать до повторного получения аттестата.</li>
+        </ul>
+      </div>
+    </article>
+
+    <article class="source-block source-block--workflow">
+      <p class="source-block-label">ТЕХНИЧЕСКИЙ ПОРЯДОК</p>
+      <h3 class="source-block-heading">Подача занимает 8–10 минут</h3>
+      <ol class="course-flow">
+        <li class="course-flow-step"><b>01</b><span>Зайти в личный кабинет.</span></li>
+        <li class="course-flow-step"><b>02</b><span>Заполнить форму подтверждения.</span></li>
+        <li class="course-flow-step"><b>03</b><span>Сохранить и отправить форму.</span></li>
+        <li class="course-flow-step"><b>04</b><span>После 31 декабря ждать начала проверки экспертами.</span></li>
+      </ol>
+    </article>
+
+    <article class="source-block source-block--reference">
+      <p class="source-block-label">ЗАМЕЧАНИЯ И СРОКИ</p>
+      <h3 class="source-block-heading">Что происходит после подачи</h3>
+      <div class="source-block-body">
+        <ul>
+          <li>В январе–феврале проверяют сведения в форме.</li>
+          <li>Если есть недостатки, на почту приходит письмо с замечаниями; чаще всего не хватает прорабов.</li>
+          <li>На устранение замечаний закон даёт один месяц.</li>
+          <li>В прошлом году срок устранения продлевали до 30 марта – 1 апреля; в текущем году даты могут отличаться.</li>
+        </ul>
+        <h4>Если замечания не устранить</h4>
+        <p>После срока могут назначить внеочередную аттестацию. Комиссия проверяет специалистов; в документе указана стоимость 630 руб. Если специалисты не готовы, можно дождаться аннулирования и подаваться заново.</p>
+        <h4>Когда начинать</h4>
+        <p>Готовиться лучше заранее: в прошлом году около 1 700 аттестатов аннулировали автоматически из-за неподачи формы.</p>
+      </div>
+    </article>
+
+    <article class="source-block source-block--people">
+      <p class="source-block-label">СКРИПТ ЗВОНКА</p>
+      <h3 class="source-block-heading">Как предложить сопровождение подтверждения</h3>
+      <div class="source-block-body">
+        <h4>Установление контакта</h4>
+        <p class="trainee-upsell-quote">«Добрый день! Компания Mavis Group. Удобно сейчас разговаривать? Звоню по ежегодному подтверждению аттестата в Белстройцентре: с 1 по 31 декабря нужно заполнить форму. Мы сопровождаем подготовку. Подскажите, у вас в прошлом году подтверждение проходило с нами?»</p>
+        <h4>Выявление потребности</h4>
+        <p class="trainee-upsell-quote">«Подскажите, пожалуйста, сейчас есть все необходимые аттестованные специалисты по направлениям?»</p>
+        <h4>Основное предложение</h4>
+        <p>Стоимость сопровождения — <b>350 руб.</b> В услугу входят:</p>
+        <ul>
+          <li>подготовка и подача формы;</li>
+          <li>консультация по стратегии устранения замечаний;</li>
+          <li>ответ на письмо Белстройцентра;</li>
+          <li>рекомендации по дальнейшим действиям.</li>
+        </ul>
+        <p>Подбор специалистов в стоимость не входит. Не предлагайте нанимать людей заранее: форму подают по фактическому составу, а вопрос со специалистами решают после письма с замечаниями.</p>
+        <h4>Возражение «дорого, сделаем сами»</h4>
+        <p class="trainee-upsell-quote">«Органы ежегодно обновляют форму и добавляют поля. В декабре большая нагрузка: легко затянуть и пропустить срок. Мы подадим вовремя и поможем не тратить деньги на специалистов без необходимости».</p>
+        <h4>Закрытие</h4>
+        <p class="trainee-upsell-quote">«Данные компании уже есть. Подготовлю счёт, а пока бухгалтерия оплачивает — проверим наличие аттестованных специалистов».</p>
+      </div>
+    </article>
+
+    <article class="source-block source-block--tools">
+      <p class="source-block-label">ДОПРОДАЖИ</p>
+      <h3 class="source-block-heading">Что ещё уточнить у клиента</h3>
+      <div class="source-block-body">
+        <h4>Повышение категории и генеральный подряд</h4>
+        <p>Если у клиента 4-я категория и он работает напрямую с заказчиками, можно предложить 1-ю (единую) категорию — для прямой работы на объектах всех классов сложности.</p>
+        <ul>
+          <li>благоустройство, лёгкие ограждающие конструкции и антикоррозионная защита;</li>
+          <li>сантехнические работы: теплоизоляция оборудования и трубопроводов;</li>
+          <li>электромонтажные работы;</li>
+          <li>слаботочные сети и системы, автоматизация.</li>
+        </ul>
+        <h4>Тендерные сертификаты</h4>
+        <p>Спросите, участвует ли клиент в тендерах. Для этого нужен ISO 9001. При работе с госзаказчиками — сертификат по охране труда; альтернативой может быть разработка документов по охране труда. Детальный сценарий — в плитке ISO 9001 и ISO 45001.</p>
+      </div>
+    </article>
+  </section>`;
+  const attestationConfirmationTile={id:'tr-sheet-d2-attestation-confirmation',icon:'✓',color:'yellow',title:'Подтверждение аттестата',eyebrow:'День 2 «Базовые скрипты и чек-листы»',lead:'Ежегодное подтверждение: сроки, подача, замечания и скрипт сопровождения.',sources:[],attachments:[],content:attestationConfirmationTileContent,assignment:null,importedSheet:false,curriculumTemplate:'trainee-sheets-2026-11-13.1',check:{q:'В какой срок подают форму ежегодного подтверждения аттестата?',options:['В любой день года','С 1 по 31 декабря','Только до 1 ноября'],answer:1,order:[]}};
   function appendOnce(course,marker,markup){if(course&&!String(course.content||'').includes(marker))course.content=`${course.content||''}${markup}`;}
   function apply(courses,days){
     if(!Array.isArray(courses)||!Array.isArray(days))return {courses,days};
@@ -108,6 +207,7 @@
     const upsell=byId('tr-sheet-d2-03');
     if(upsell&&String(upsell.content||'').includes('Скрипт по тендерным сертификатам - СТРОИТЕЛЬСТВО'))upsell.content=upsellTileContent;
     if(!byId(bitrixTile.id)){courses.push({...bitrixTile});const dayTwo=days[1];if(dayTwo){dayTwo.courseIds=Array.isArray(dayTwo.courseIds)?dayTwo.courseIds:[];dayTwo.courseIds.push(bitrixTile.id);}}
+    if(!byId(attestationConfirmationTile.id)){courses.push({...attestationConfirmationTile});const dayTwo=days[1];if(dayTwo){dayTwo.courseIds=Array.isArray(dayTwo.courseIds)?dayTwo.courseIds:[];dayTwo.courseIds.push(attestationConfirmationTile.id);}}
     appendOnce(byId(bitrixTile.id),'Регламент работы менеджеров в Bitrix24',bitrixRegulation);
     return {courses,days};
   }

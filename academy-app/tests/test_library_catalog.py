@@ -100,6 +100,15 @@ class LibraryCatalogValidationTests(unittest.TestCase):
             self.assertIn(filename, content)
             self.assertTrue((server.ROOT / filename).is_file(), filename)
 
+    def test_day_two_attestation_confirmation_tile_is_available_to_existing_programmes(self):
+        enrichment = (server.ROOT / "trainee-media-enrichment.js").read_text(encoding="utf-8")
+        library = (server.ROOT / "manager-library.js").read_text(encoding="utf-8")
+
+        self.assertIn("tr-sheet-d2-attestation-confirmation", enrichment)
+        self.assertIn("Подтверждение аттестата", enrichment)
+        self.assertIn("С 1 по 31 декабря", enrichment)
+        self.assertIn("tr-sheet-d2-attestation-confirmation", library)
+
     def test_accepts_a_complete_imported_lesson_larger_than_twenty_thousand_characters(self):
         curriculum = server.validate_trainee_curriculum({
             "planVersion": server.CURRENT_TRAINEE_PLAN_VERSION,
