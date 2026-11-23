@@ -2161,7 +2161,13 @@ class Handler(SimpleHTTPRequestHandler):
                 # browser has already loaded the approved current programme.
                 # Bootstrap it from that exact in-memory programme instead of
                 # rejecting the leader's first save and making the edit vanish.
-                curriculum = validate_trainee_curriculum(payload.get("curriculum", {}))
+                bootstrap_curriculum = payload.get("curriculum")
+                if not isinstance(bootstrap_curriculum, dict):
+                    # The normal one-tile request deliberately stays small.
+                    # Tell the browser to retry once with its current plan only
+                    # when this server does not yet have a usable programme.
+                    raise ValueError("trainee_curriculum_unavailable")
+                curriculum = validate_trainee_curriculum(bootstrap_curriculum)
             if not isinstance(curriculum, dict) or not isinstance(curriculum.get("courses"), list):
                 raise ValueError("trainee_curriculum_unavailable")
             courses = [dict(course) if isinstance(course, dict) else course for course in curriculum["courses"]]
@@ -2184,7 +2190,17 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ValueError("invalid_trainee_tile")
             if not write_persistent_state("curriculum", curriculum):
                 write_local_json(CURRICULUM_STORE, curriculum)
-            return self.respond_json({"saved": True, "verified": True, "curriculum": curriculum})
+            # Do not echo the whole programme (which can contain hundreds of
+            # kilobytes of lesson HTML) after a one-tile edit. The browser has
+            # the text it just saved; returning only the durable placement
+            # avoids a second oversized transfer and makes retries reliable.
+            return self.respond_json({
+                "saved": True,
+                "verified": True,
+                "tile_id": tile_id,
+                "days": curriculum["days"],
+                "planVersion": curriculum.get("planVersion", CURRENT_TRAINEE_PLAN_VERSION),
+            })
         except ValueError as exc:
             detail = persistent_error_detail(exc)
             if detail == "state_not_configured":

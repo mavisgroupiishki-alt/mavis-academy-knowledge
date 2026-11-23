@@ -240,11 +240,17 @@ class CourseSourceContractTests(unittest.TestCase):
         save = client.split("window.academySaveTraineeTile=async()=>", 1)[1].split(
             "window.academyLiveTraineeDocument", 1
         )[0]
-        self.assertIn("/api/academy/trainee-tile-save", save)
+        self.assertIn("/api/academy/trainee-tile-save", client)
+        self.assertIn("async function academySaveTraineeTileRequest(payload)", client)
+        self.assertIn("academySaveTraineeTileRequest({tile})", save)
+        self.assertIn("needsBootstrap", save)
         self.assertIn("curriculum:{courses:curriculum.courses", save)
         self.assertIn("!saved?.saved||!saved?.verified", save)
+        self.assertIn("saved.tile_id!==course.id", save)
         self.assertIn("def save_trainee_tile(self):", backend)
         self.assertIn("merge_missing_trainee_tile(curriculum, payload.get(\"curriculum\", {}), tile_id)", backend)
+        self.assertIn('"tile_id": tile_id', backend)
+        self.assertIn("trainee_curriculum_unavailable", backend)
         self.assertIn('"reason": detail', backend)
         self.assertIn("body.reason==='unknown_trainee_tile'", client)
 

@@ -1712,7 +1712,18 @@
   function sourceEditor(){const paths=editableSources(),path=state.sourceEditorPath||paths[0]||'';return shell(`<button class="course-back" onclick="academyCatalog()">← Все обучения</button><section class="leader-results curriculum-editor"><span>РУКОВОДИТЕЛЬ · РЕДАКТОР БАЗЫ ЗНАНИЙ</span><h1>Редактор материалов</h1><p>Ниже — исходные материалы, а не плитки каталога. Ищите по названию и открывайте нужный документ: поле не перерисовывается при наборе, поэтому курсор остаётся на месте.</p><label>Найти материал<input class="academy-source-search" placeholder="Например: МЧС, металл, договор…" oninput="academyFilterSourceEditor(this)"></label><div class="academy-source-picker" aria-label="Исходные материалы">${paths.map(item=>`<button type="button" data-source-picker="${esc((sourceTitle(item)+' '+item).toLocaleLowerCase('ru'))}" class="${item===path?'active':''}" onclick="academySelectSourceEditor('${esc(item)}')"><small>${esc(item.split('/')[0])}</small><b>${esc(sourceTitle(item))}</b></button>`).join('')}</div>${richEditorToolbar()}<div id="source-rich-editor" class="rich-editor source-rich-editor" contenteditable="true">${state.sourceEditorLoading?'<p>Загружаю материал…</p>':safeRichHtml(state.sourceEditorHtml)}</div><div class="editor-actions"><button class="reader-test" ${state.sourceEditorSaving||state.sourceEditorLoading?'disabled':''} onclick="academySaveSourceEditor()">${state.sourceEditorSaving?'Сохраняю…':'Сохранить материал'}</button></div>${state.sourceEditorError?`<p class="exam-error">${esc(state.sourceEditorError)}</p>`:''}</section>`)}
   function bindLibraryAutosave(){const editor=document.querySelector('.curriculum-editor');if(!editor)return;const queue=event=>{if(event.target?.matches('[data-library-field]'))window.academyQueueLibrarySave();};editor.oninput=queue;editor.onchange=queue;}
   function render() { if (!access) { state.login=true; el.innerHTML=loginLanding(); return; } state.login=false; el.innerHTML = state.page === 'course' ? reader() : state.page === 'presentation' ? presentation() : state.page === 'exam' ? finalExam() : state.page === 'test-hub' ? testHub() : state.page === 'leader-results' ? leaderResults() : state.page === 'trainee-profile' ? traineeProfile() : state.page === 'curriculum-editor' ? curriculumEditor() : state.page === 'library-editor' ? libraryEditor() : state.page === 'source-editor' ? sourceEditor() : state.page === 'governance' ? governance() : catalog(); if (state.page==='library-editor') bindLibraryAutosave(); if (state.page==='leader-results') injectLeaderOperationalPanel(); if (state.page==='course'){loadDocument();loadManagerScripts();loadExpertPassportWorkflow();loadProductReferenceLists();loadProductOtherDetails();} if (state.page==='presentation') loadPresentationDocument(); }
-  async function academySaveError(response,fallback){const body=await response.json().catch(()=>({}));if(response.status===401)return 'Сеанс входа истёк. Войдите заново: изменения не были сохранены.';if(body.error==='persistent_storage_not_configured')return 'Постоянное хранилище ещё не подключено: материал не сохранён.';if(body.error==='persistent_storage_unavailable')return 'Постоянное хранилище временно недоступно: материал не сохранён. Повторите позже.';if(body.error==='invalid_trainee_tile'){if(body.reason==='unknown_trainee_tile')return 'Плитка не найдена в сохранённой программе. Обновите страницу: изменения не были сохранены.';if(body.reason==='invalid_curriculum')return 'Программа стажировки имеет неподдерживаемую структуру. Изменения не были сохранены.';return 'Сервер отклонил данные плитки: изменения не были сохранены.';}return fallback;}
+  async function academySaveError(response,fallback,knownBody){const body=knownBody||await response.json().catch(()=>({}));if(response.status===401)return 'Сеанс входа истёк. Войдите заново: изменения не были сохранены.';if(body.error==='persistent_storage_not_configured')return 'Постоянное хранилище ещё не подключено: материал не сохранён.';if(body.error==='persistent_storage_unavailable')return 'Постоянное хранилище временно недоступно: материал не сохранён. Повторите позже.';if(body.error==='invalid_trainee_tile'){if(body.reason==='unknown_trainee_tile')return 'Плитка не найдена в сохранённой программе. Повторная синхронизация не помогла: обновите страницу, изменения не были сохранены.';if(body.reason==='trainee_curriculum_unavailable')return 'Сохранённая программа не найдена. Не обновляйте страницу: повторите сохранение ещё раз.';if(body.reason==='invalid_curriculum')return 'Программа стажировки имеет неподдерживаемую структуру. Изменения не были сохранены.';return 'Сервер отклонил данные плитки: изменения не были сохранены.';}return fallback;}
+  async function academySaveTraineeTileRequest(payload){
+    let lastError;
+    for(let attempt=0;attempt<2;attempt+=1){
+      try{
+        const response=await academyAuthorizedFetch('/api/academy/trainee-tile-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        if(response.status>=500&&attempt===0){await new Promise(resolve=>setTimeout(resolve,350));continue;}
+        return response;
+      }catch(error){lastError=error;if(attempt===0){await new Promise(resolve=>setTimeout(resolve,350));continue;}}
+    }
+    throw lastError||new Error('Не удалось связаться с постоянным хранилищем.');
+  }
   window.academyEditOpenedMaterial=()=>{if(!canEditBase())return;const course=current(),{path}=selectedSourceFor(course);if(!path)return;state.inlineEditorPath=path;state.inlineEditorHtml='';state.inlineEditorError='';academyLoadInlineMaterial();render();};
   window.academyCloseInlineEditor=()=>{state.inlineEditorPath='';state.inlineEditorHtml='';state.inlineEditorError='';state.inlineEditorLoading=false;state.inlineEditorSaving=false;render();};
   window.academyLoadInlineMaterial=async()=>{const path=state.inlineEditorPath,course=current();if(!path||!course)return;state.inlineEditorLoading=true;state.inlineEditorError='';render();try{const response=await fetch(courseDocumentUrl(course,path),{headers:authHeaders()});if(!response.ok)throw new Error('Не удалось загрузить материал для редактирования.');const data=await response.json();state.inlineEditorHtml=data.format==='html'?safeRichHtml(data.content):markdown(data.content);}catch(error){state.inlineEditorError=error.message||'Не удалось загрузить материал для редактирования.';}state.inlineEditorLoading=false;render();};
@@ -2061,13 +2072,22 @@
     try{
       const tile={id:course.id,title:String(course.title||'').trim(),eyebrow:String(course.eyebrow||''),lead:String(course.lead||'')};
       if(course._contentEdited)tile.content=safeRichHtml(course.content||'');
-      const curriculum=normalizeTraineeCurriculum(traineeCourses,traineeDays);
-      const response=await academyAuthorizedFetch('/api/academy/trainee-tile-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tile,curriculum:{courses:curriculum.courses,days:curriculum.days,planVersion:TRAINEE_PLAN_VERSION}})});
+      // A normal save should contain just this tile. Previously every click
+      // uploaded and downloaded the entire four-day programme, which made a
+      // small text correction fragile on a slow connection. Only bootstrap a
+      // missing/outdated programme when the server explicitly asks for it.
+      let response=await academySaveTraineeTileRequest({tile});
+      if(!response.ok){
+        const failure=await response.json().catch(()=>({}));
+        const needsBootstrap=failure.error==='invalid_trainee_tile'&&['unknown_trainee_tile','trainee_curriculum_unavailable'].includes(failure.reason);
+        if(!needsBootstrap)throw new Error(await academySaveError(response,'Не удалось сохранить плитку.',failure));
+        const curriculum=normalizeTraineeCurriculum(traineeCourses,traineeDays);
+        response=await academySaveTraineeTileRequest({tile,curriculum:{courses:curriculum.courses,days:curriculum.days,planVersion:TRAINEE_PLAN_VERSION}});
+      }
       if(!response.ok)throw new Error(await academySaveError(response,'Не удалось сохранить плитку.'));
       const saved=await response.json();
-      if(!saved?.saved||!saved?.verified||!Array.isArray(saved.curriculum?.courses)||!Array.isArray(saved.curriculum?.days))throw new Error('Сервер не подтвердил сохранение плитки.');
-      const persisted=normalizeTraineeCurriculum(saved.curriculum.courses,saved.curriculum.days);
-      traineeCourses=persisted.courses;traineeDays=persisted.days;
+      if(!saved?.saved||!saved?.verified||saved.tile_id!==course.id||!Array.isArray(saved.days))throw new Error('Сервер не подтвердил сохранение плитки.');
+      traineeDays=saved.days;
       state.curriculumError='Изменения сохранены и подтверждены постоянным хранилищем.';
     }catch(error){state.curriculumError=error.message||'Не удалось сохранить плитку.';}
     state.curriculumSaving=false;render();
